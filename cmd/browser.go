@@ -16,19 +16,19 @@ var browserCmd = &cobra.Command{
 
 var startCmd = &cobra.Command{
 	Use:   "start",
-	Short: "Start a new Chromium instance with remote debugging",
+	Short: "Start a new Chrome instance with remote debugging",
 	RunE:  runStart,
 }
 
 var stopCmd = &cobra.Command{
 	Use:   "stop",
-	Short: "Stop a running Chromium instance",
+	Short: "Stop a running Chrome instance",
 	RunE:  runStop,
 }
 
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List running Chromium instances",
+	Short: "List running Chrome instances",
 	RunE:  runList,
 }
 
@@ -42,12 +42,12 @@ var (
 )
 
 func init() {
-	startCmd.Flags().StringVar(&startName, "name", "", "Instance identifier")
-	startCmd.Flags().IntVar(&startPort, "port", 0, "Remote debugging port (0 = auto)")
+	startCmd.Flags().StringVarP(&startName, "name", "n", "", "Instance identifier")
+	startCmd.Flags().IntVarP(&startPort, "port", "p", 0, "Remote debugging port (0 = auto)")
 	startCmd.Flags().BoolVar(&startHeadless, "headless", false, "Run in headless mode")
-	startCmd.Flags().StringVar(&startUserDataDir, "user-data-dir", "", "Profile directory")
-	stopCmd.Flags().StringVar(&stopName, "name", "", "Instance name to stop")
-	stopCmd.Flags().BoolVar(&stopAll, "all", false, "Stop all instances")
+	startCmd.Flags().StringVarP(&startUserDataDir, "user-data-dir", "u", "", "Profile directory")
+	stopCmd.Flags().StringVarP(&stopName, "name", "n", "", "Instance name to stop")
+	stopCmd.Flags().BoolVarP(&stopAll, "all", "a", false, "Stop all instances")
 	browserCmd.AddCommand(startCmd, stopCmd, listCmd)
 	rootCmd.AddCommand(browserCmd)
 }

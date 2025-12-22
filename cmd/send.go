@@ -27,9 +27,9 @@ var (
 )
 
 func init() {
-	sendCmd.Flags().StringVar(&sendName, "name", "", "Browser instance name (default: first available)")
-	sendCmd.Flags().StringVar(&sendTarget, "target", "", "Target ID or 'browser' for browser-level commands")
-	sendCmd.Flags().StringVar(&sendParams, "params", "", "JSON params (or pipe via stdin)")
+	sendCmd.Flags().StringVarP(&sendName, "name", "n", "", "Browser instance name (default: first available)")
+	sendCmd.Flags().StringVarP(&sendTarget, "target", "t", "", "Target ID or 'browser' for browser-level commands")
+	sendCmd.Flags().StringVarP(&sendParams, "params", "p", "", "JSON params (or pipe via stdin)")
 	sendCmd.Flags().DurationVar(&sendTimeout, "timeout", 30*time.Second, "Response timeout")
 	rootCmd.AddCommand(sendCmd)
 }

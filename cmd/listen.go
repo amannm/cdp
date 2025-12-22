@@ -28,10 +28,10 @@ var (
 )
 
 func init() {
-	listenCmd.Flags().StringVar(&listenName, "name", "", "Browser instance name (default: first available)")
-	listenCmd.Flags().StringVar(&listenTarget, "target", "", "Target ID")
-	listenCmd.Flags().StringVar(&listenFilter, "filter", "", "Event name filter (e.g., Page.loadEventFired)")
-	listenCmd.Flags().IntVar(&listenCount, "count", 0, "Exit after N events (0 = unlimited)")
+	listenCmd.Flags().StringVarP(&listenName, "name", "n", "", "Browser instance name (default: first available)")
+	listenCmd.Flags().StringVarP(&listenTarget, "target", "t", "", "Target ID")
+	listenCmd.Flags().StringVarP(&listenFilter, "filter", "f", "", "Event name filter (e.g., Page.loadEventFired)")
+	listenCmd.Flags().IntVarP(&listenCount, "count", "c", 0, "Exit after N events (0 = unlimited)")
 	rootCmd.AddCommand(listenCmd)
 }
 

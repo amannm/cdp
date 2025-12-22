@@ -31,12 +31,12 @@ func GenerateName() string {
 }
 
 func FindChromeBinary() (string, error) {
-	current := filepath.Join(ChromiumDir, "current")
+	current := filepath.Join(ChromeDir, "current")
 	target, err := os.Readlink(current)
 	if err != nil {
-		return "", ErrUser("no chromium installed (run 'chromium install' first)")
+		return "", ErrUser("no chrome installed (run 'chrome install' first)")
 	}
-	versionDir := filepath.Join(ChromiumDir, target)
+	versionDir := filepath.Join(ChromeDir, target)
 	platform := DetectPlatform()
 	return BinaryPath(versionDir, platform), nil
 }

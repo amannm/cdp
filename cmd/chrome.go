@@ -7,26 +7,26 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var chromiumCmd = &cobra.Command{
-	Use:   "chromium",
-	Short: "Manage Chromium installation",
+var chromeCmd = &cobra.Command{
+	Use:   "chrome",
+	Short: "Manage Chrome installation",
 }
 
 var installCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Download and install Chromium for Testing",
+	Short: "Download and install Chrome",
 	RunE:  runInstall,
 }
 
 var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
-	Short: "Remove installed Chromium",
+	Short: "Remove installed Chrome",
 	RunE:  runUninstall,
 }
 
 var upgradeCmd = &cobra.Command{
 	Use:   "upgrade",
-	Short: "Upgrade to latest Chromium version",
+	Short: "Upgrade to latest Chrome version",
 	RunE:  runUpgrade,
 }
 
@@ -41,15 +41,15 @@ var (
 )
 
 func init() {
-	installCmd.Flags().StringVar(&installChannel, "channel", "Stable", "Release channel (Stable|Beta|Dev|Canary)")
-	installCmd.Flags().StringVar(&installPath, "path", "", "Custom install location")
-	uninstallCmd.Flags().StringVar(&uninstallVer, "version", "", "Specific version to remove (default: all)")
-	uninstallCmd.Flags().StringVar(&uninstallPath, "path", "", "Custom install location")
-	upgradeCmd.Flags().StringVar(&upgradeChannel, "channel", "Stable", "Release channel (Stable|Beta|Dev|Canary)")
-	upgradeCmd.Flags().StringVar(&upgradePath, "path", "", "Custom install location")
+	installCmd.Flags().StringVarP(&installChannel, "channel", "c", "Stable", "Release channel (Stable|Beta|Dev|Canary)")
+	installCmd.Flags().StringVarP(&installPath, "path", "p", "", "Custom install location")
+	uninstallCmd.Flags().StringVarP(&uninstallVer, "version", "v", "", "Specific version to remove (default: all)")
+	uninstallCmd.Flags().StringVarP(&uninstallPath, "path", "p", "", "Custom install location")
+	upgradeCmd.Flags().StringVarP(&upgradeChannel, "channel", "c", "Stable", "Release channel (Stable|Beta|Dev|Canary)")
+	upgradeCmd.Flags().StringVarP(&upgradePath, "path", "p", "", "Custom install location")
 	upgradeCmd.Flags().BoolVar(&upgradeClean, "clean", false, "Remove old versions after upgrade")
-	chromiumCmd.AddCommand(installCmd, uninstallCmd, upgradeCmd)
-	rootCmd.AddCommand(chromiumCmd)
+	chromeCmd.AddCommand(installCmd, uninstallCmd, upgradeCmd)
+	rootCmd.AddCommand(chromeCmd)
 }
 
 func runInstall(_ *cobra.Command, _ []string) error {

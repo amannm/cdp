@@ -7,7 +7,7 @@ import (
 
 var (
 	BaseDir      = filepath.Join(os.Getenv("HOME"), ".cdp")
-	ChromiumDir  = filepath.Join(BaseDir, "chromium")
+	ChromeDir    = filepath.Join(BaseDir, "chrome")
 	InstancesDir = filepath.Join(BaseDir, "instances")
 	Verbose      bool
 )

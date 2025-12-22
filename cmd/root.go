@@ -11,7 +11,6 @@ import (
 var rootCmd = &cobra.Command{
 	Use:           "cdp",
 	Short:         "Chrome DevTools Protocol CLI",
-	Long:          "A context-efficient tool for LLM agents to interact with the web via CDP.",
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }

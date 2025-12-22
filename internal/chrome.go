@@ -143,7 +143,7 @@ func ExtractZip(src, dest string) error {
 	return nil
 }
 
-func InstallChromium(base, version, dlURL string) (string, error) {
+func InstallChrome(base, version, dlURL string) (string, error) {
 	versionDir := filepath.Join(base, version)
 	if _, err := os.Stat(versionDir); err == nil {
 		return versionDir, nil
@@ -183,9 +183,9 @@ func Install(channel, base string) (string, error) {
 		return "", ErrRuntime("getting download url: %v", err)
 	}
 	if base == "" {
-		base = ChromiumDir
+		base = ChromeDir
 	}
-	versionDir, err := InstallChromium(base, version, dlURL)
+	versionDir, err := InstallChrome(base, version, dlURL)
 	if err != nil {
 		return "", ErrRuntime("installing: %v", err)
 	}
@@ -199,7 +199,7 @@ func Install(channel, base string) (string, error) {
 
 func Uninstall(version, base string) error {
 	if base == "" {
-		base = ChromiumDir
+		base = ChromeDir
 	}
 	if version != "" {
 		target := filepath.Join(base, version)
@@ -231,12 +231,12 @@ func Upgrade(channel, base string, clean bool) (string, error) {
 		return "", ErrUser("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 	if base == "" {
-		base = ChromiumDir
+		base = ChromeDir
 	}
 	current := filepath.Join(base, "current")
 	currentVer, err := os.Readlink(current)
 	if err != nil {
-		return "", ErrUser("no installation found (use 'chromium install' first)")
+		return "", ErrUser("no installation found (use 'chrome install' first)")
 	}
 	dlURL, version, err := GetDownloadURL(channel, platform)
 	if err != nil {
@@ -245,7 +245,7 @@ func Upgrade(channel, base string, clean bool) (string, error) {
 	if version == currentVer {
 		return "", nil // Already up to date
 	}
-	versionDir, err := InstallChromium(base, version, dlURL)
+	versionDir, err := InstallChrome(base, version, dlURL)
 	if err != nil {
 		return "", ErrRuntime("installing: %v", err)
 	}
