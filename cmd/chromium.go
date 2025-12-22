@@ -98,7 +98,7 @@ func fetchVersionInfo() (*versionInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var info versionInfo
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		return nil, err
@@ -114,7 +114,7 @@ func downloadFile(url, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("download failed: %s", resp.Status)
 	}
@@ -123,7 +123,7 @@ func downloadFile(url, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	written, err := io.Copy(f, resp.Body)
 	if err != nil {
 		return err
@@ -139,29 +139,29 @@ func extractZip(src, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	for _, f := range r.File {
 		path := filepath.Join(dest, f.Name)
 		if !strings.HasPrefix(path, filepath.Clean(dest)+string(os.PathSeparator)) {
 			return fmt.Errorf("invalid path: %s", f.Name)
 		}
 		if f.FileInfo().IsDir() {
-			os.MkdirAll(path, f.Mode())
+			_ = os.MkdirAll(path, f.Mode())
 			continue
 		}
-		os.MkdirAll(filepath.Dir(path), 0755)
+		_ = os.MkdirAll(filepath.Dir(path), 0755)
 		out, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
 		if err != nil {
 			return err
 		}
 		rc, err := f.Open()
 		if err != nil {
-			out.Close()
+			_ = out.Close()
 			return err
 		}
 		_, err = io.Copy(out, rc)
-		rc.Close()
-		out.Close()
+		_ = rc.Close()
+		_ = out.Close()
 		if err != nil {
 			return err
 		}
@@ -169,7 +169,7 @@ func extractZip(src, dest string) error {
 	return nil
 }
 
-func runInstall(cmd *cobra.Command, args []string) error {
+func runInstall(_ *cobra.Command, _ []string) error {
 	platform := detectPlatform()
 	if platform == "" {
 		return ErrUser("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
@@ -205,18 +205,18 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		fmt.Println(binaryPath(versionDir, platform))
 		return nil
 	}
-	os.MkdirAll(base, 0755)
+	_ = os.MkdirAll(base, 0755)
 	tmpZip := filepath.Join(base, "chrome.zip")
-	defer os.Remove(tmpZip)
+	defer func() { _ = os.Remove(tmpZip) }()
 	if err := downloadFile(dlURL, tmpZip); err != nil {
 		return ErrRuntime("downloading: %v", err)
 	}
 	if err := extractZip(tmpZip, versionDir); err != nil {
-		os.RemoveAll(versionDir)
+		_ = os.RemoveAll(versionDir)
 		return ErrRuntime("extracting: %v", err)
 	}
 	current := filepath.Join(base, "current")
-	os.Remove(current)
+	_ = os.Remove(current)
 	if err := os.Symlink(channel.Version, current); err != nil {
 		return ErrRuntime("creating symlink: %v", err)
 	}
@@ -236,7 +236,7 @@ func binaryPath(versionDir, platform string) string {
 	return versionDir
 }
 
-func runUninstall(cmd *cobra.Command, args []string) error {
+func runUninstall(_ *cobra.Command, _ []string) error {
 	base := uninstallPath
 	if base == "" {
 		base = ChromiumDir
@@ -248,7 +248,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		}
 		current := filepath.Join(base, "current")
 		if link, err := os.Readlink(current); err == nil && link == uninstallVer {
-			os.Remove(current)
+			_ = os.Remove(current)
 		}
 		fmt.Println("removed", uninstallVer)
 		return nil
@@ -262,13 +262,13 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		return ErrRuntime("reading directory: %v", err)
 	}
 	for _, e := range entries {
-		os.RemoveAll(filepath.Join(base, e.Name()))
+		_ = os.RemoveAll(filepath.Join(base, e.Name()))
 	}
 	fmt.Println("removed all")
 	return nil
 }
 
-func runUpgrade(cmd *cobra.Command, args []string) error {
+func runUpgrade(_ *cobra.Command, _ []string) error {
 	platform := detectPlatform()
 	if platform == "" {
 		return ErrUser("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
@@ -311,21 +311,21 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	versionDir := filepath.Join(base, channel.Version)
 	if _, err := os.Stat(versionDir); err != nil {
 		tmpZip := filepath.Join(base, "chrome.zip")
-		defer os.Remove(tmpZip)
+		defer func() { _ = os.Remove(tmpZip) }()
 		if err := downloadFile(dlURL, tmpZip); err != nil {
 			return ErrRuntime("downloading: %v", err)
 		}
 		if err := extractZip(tmpZip, versionDir); err != nil {
-			os.RemoveAll(versionDir)
+			_ = os.RemoveAll(versionDir)
 			return ErrRuntime("extracting: %v", err)
 		}
 	}
-	os.Remove(current)
+	_ = os.Remove(current)
 	if err := os.Symlink(channel.Version, current); err != nil {
 		return ErrRuntime("updating symlink: %v", err)
 	}
 	if upgradeClean && currentVer != channel.Version {
-		os.RemoveAll(filepath.Join(base, currentVer))
+		_ = os.RemoveAll(filepath.Join(base, currentVer))
 	}
 	fmt.Println(binaryPath(versionDir, platform))
 	return nil

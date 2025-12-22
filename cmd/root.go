@@ -16,10 +16,10 @@ func (e RuntimeError) Error() string { return e.Err.Error() }
 func (e UserError) Unwrap() error    { return e.Err }
 func (e RuntimeError) Unwrap() error { return e.Err }
 
-func ErrUser(format string, args ...interface{}) error {
+func ErrUser(format string, args ...any) error {
 	return UserError{Err: fmt.Errorf(format, args...)}
 }
-func ErrRuntime(format string, args ...interface{}) error {
+func ErrRuntime(format string, args ...any) error {
 	return RuntimeError{Err: fmt.Errorf(format, args...)}
 }
 

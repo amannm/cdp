@@ -49,7 +49,7 @@ func findFirstInstance() (*Instance, error) {
 			if isProcessAlive(inst.PID) {
 				return inst, nil
 			}
-			removeInstance(name)
+			_ = removeInstance(name)
 		}
 	}
 	return nil, ErrUser("no running instances")
@@ -68,7 +68,7 @@ func readParamsFromStdin() (string, error) {
 	return result, scanner.Err()
 }
 
-func runSend(cmd *cobra.Command, args []string) error {
+func runSend(_ *cobra.Command, args []string) error {
 	method := args[0]
 	var inst *Instance
 	var err error
@@ -78,7 +78,7 @@ func runSend(cmd *cobra.Command, args []string) error {
 			return ErrUser("instance %s not found", sendName)
 		}
 		if !isProcessAlive(inst.PID) {
-			removeInstance(sendName)
+			_ = removeInstance(sendName)
 			return ErrUser("instance %s not running", sendName)
 		}
 	} else {
@@ -107,7 +107,7 @@ func runSend(cmd *cobra.Command, args []string) error {
 	defer cancel()
 	var sessionID string
 	if sendTarget != "" && sendTarget != "browser" {
-		attachParams, _ := json.Marshal(map[string]interface{}{"targetId": sendTarget, "flatten": true})
+		attachParams, _ := json.Marshal(map[string]any{"targetId": sendTarget, "flatten": true})
 		attachResp, err := conn.send(ctx, "Target.attachToTarget", attachParams, "")
 		if err != nil {
 			return ErrRuntime("attaching to target: %v", err)
@@ -128,7 +128,7 @@ func runSend(cmd *cobra.Command, args []string) error {
 		return ErrRuntime("sending command: %v", err)
 	}
 	if resp.Error != nil {
-		errJSON, _ := json.Marshal(map[string]interface{}{"error": resp.Error})
+		errJSON, _ := json.Marshal(map[string]any{"error": resp.Error})
 		fmt.Println(string(errJSON))
 		return nil
 	}

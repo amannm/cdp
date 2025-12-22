@@ -152,7 +152,7 @@ func removeInstance(name string) error {
 	return os.Remove(filepath.Join(InstancesDir, name+".json"))
 }
 
-func runStart(cmd *cobra.Command, args []string) error {
+func runStart(_ *cobra.Command, _ []string) error {
 	binary, err := findChromeBinary()
 	if err != nil {
 		return err
@@ -182,9 +182,11 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if port == 0 {
 		port = 9222
 		for i := 0; i < 100; i++ {
-			if _, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/json/version", port)); err != nil {
+			resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/json/version", port))
+			if err != nil {
 				break
 			}
+			_ = resp.Body.Close()
 			port++
 		}
 	}
@@ -236,7 +238,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runStop(cmd *cobra.Command, args []string) error {
+func runStop(_ *cobra.Command, _ []string) error {
 	if !stopAll && stopName == "" {
 		return ErrUser("--name or --all required")
 	}
@@ -350,7 +352,7 @@ func isProcessAlive(pid int) bool {
 	return err == nil
 }
 
-func runList(cmd *cobra.Command, args []string) error {
+func runList(_ *cobra.Command, _ []string) error {
 	entries, err := os.ReadDir(InstancesDir)
 	if err != nil {
 		if os.IsNotExist(err) {

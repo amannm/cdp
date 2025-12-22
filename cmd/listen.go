@@ -34,7 +34,7 @@ func init() {
 	rootCmd.AddCommand(listenCmd)
 }
 
-func runListen(cmd *cobra.Command, args []string) error {
+func runListen(_ *cobra.Command, args []string) error {
 	domain := args[0]
 	var inst *Instance
 	var err error
@@ -44,7 +44,7 @@ func runListen(cmd *cobra.Command, args []string) error {
 			return ErrUser("instance %s not found", listenName)
 		}
 		if !isProcessAlive(inst.PID) {
-			removeInstance(listenName)
+			_ = removeInstance(listenName)
 			return ErrUser("instance %s not running", listenName)
 		}
 	} else {
@@ -61,7 +61,7 @@ func runListen(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	var sessionID string
 	if listenTarget != "" {
-		attachParams, _ := json.Marshal(map[string]interface{}{"targetId": listenTarget, "flatten": true})
+		attachParams, _ := json.Marshal(map[string]any{"targetId": listenTarget, "flatten": true})
 		attachResp, err := conn.send(ctx, "Target.attachToTarget", attachParams, "")
 		if err != nil {
 			return ErrRuntime("attaching to target: %v", err)
@@ -99,10 +99,13 @@ func runListen(cmd *cobra.Command, args []string) error {
 			if listenFilter != "" && !strings.HasPrefix(event.Method, listenFilter) {
 				continue
 			}
-			out := map[string]interface{}{"method": event.Method}
+			out := map[string]any{"method": event.Method}
 			if event.Params != nil {
-				var params interface{}
-				json.Unmarshal(event.Params, &params)
+				var params any
+				err := json.Unmarshal(event.Params, &params)
+				if err != nil {
+					return err
+				}
 				out["params"] = params
 			}
 			data, _ := json.Marshal(out)
