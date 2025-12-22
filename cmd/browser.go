@@ -42,6 +42,12 @@ var stopCmd = &cobra.Command{
 	RunE:  runStop,
 }
 
+var listCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List running Chromium instances",
+	RunE:  runList,
+}
+
 var (
 	startName        string
 	startPort        int
@@ -58,7 +64,7 @@ func init() {
 	startCmd.Flags().StringVar(&startUserDataDir, "user-data-dir", "", "Profile directory")
 	stopCmd.Flags().StringVar(&stopName, "name", "", "Instance name to stop")
 	stopCmd.Flags().BoolVar(&stopAll, "all", false, "Stop all instances")
-	browserCmd.AddCommand(startCmd, stopCmd)
+	browserCmd.AddCommand(startCmd, stopCmd, listCmd)
 	rootCmd.AddCommand(browserCmd)
 }
 
@@ -256,5 +262,48 @@ func stopInstance(name string) error {
 	}
 	removeInstance(name)
 	fmt.Printf("stopped %s\n", name)
+	return nil
+}
+
+func isProcessAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = proc.Signal(syscall.Signal(0))
+	return err == nil
+}
+
+func runList(cmd *cobra.Command, args []string) error {
+	entries, err := os.ReadDir(InstancesDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Println("[]")
+			return nil
+		}
+		return err
+	}
+	var instances []*Instance
+	for _, e := range entries {
+		name := e.Name()
+		if filepath.Ext(name) != ".json" {
+			continue
+		}
+		name = name[:len(name)-5]
+		inst, err := loadInstance(name)
+		if err != nil {
+			continue
+		}
+		if !isProcessAlive(inst.PID) {
+			removeInstance(name)
+			continue
+		}
+		instances = append(instances, inst)
+	}
+	if instances == nil {
+		instances = []*Instance{}
+	}
+	out, _ := json.Marshal(instances)
+	fmt.Println(string(out))
 	return nil
 }
