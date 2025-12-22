@@ -36,22 +36,9 @@ func init() {
 
 func runListen(_ *cobra.Command, args []string) error {
 	domain := args[0]
-	var inst *Instance
-	var err error
-	if listenName != "" {
-		inst, err = loadInstance(listenName)
-		if err != nil {
-			return ErrUser("instance %s not found", listenName)
-		}
-		if !isProcessAlive(inst.PID) {
-			_ = removeInstance(listenName)
-			return ErrUser("instance %s not running", listenName)
-		}
-	} else {
-		inst, err = findFirstInstance()
-		if err != nil {
-			return err
-		}
+	inst, err := resolveInstance(listenName)
+	if err != nil {
+		return err
 	}
 	conn, err := dialCDP(inst.WsURL, true)
 	if err != nil {
@@ -61,21 +48,10 @@ func runListen(_ *cobra.Command, args []string) error {
 	ctx := context.Background()
 	var sessionID string
 	if listenTarget != "" {
-		attachParams, _ := json.Marshal(map[string]any{"targetId": listenTarget, "flatten": true})
-		attachResp, err := conn.send(ctx, "Target.attachToTarget", attachParams, "")
+		sessionID, err = conn.attachToTarget(ctx, listenTarget)
 		if err != nil {
 			return ErrRuntime("attaching to target: %v", err)
 		}
-		if attachResp.Error != nil {
-			return ErrUser("attach error: %s", attachResp.Error.Message)
-		}
-		var result struct {
-			SessionID string `json:"sessionId"`
-		}
-		if err := json.Unmarshal(attachResp.Result, &result); err != nil {
-			return ErrRuntime("parsing attach response: %v", err)
-		}
-		sessionID = result.SessionID
 	}
 	enableMethod := domain + ".enable"
 	enableResp, err := conn.send(ctx, enableMethod, nil, sessionID)

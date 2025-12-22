@@ -33,28 +33,6 @@ func init() {
 	rootCmd.AddCommand(sendCmd)
 }
 
-func findFirstInstance() (*Instance, error) {
-	entries, err := os.ReadDir(InstancesDir)
-	if err != nil {
-		return nil, ErrUser("no instances found")
-	}
-	for _, e := range entries {
-		name := e.Name()
-		if len(name) > 5 && name[len(name)-5:] == ".json" {
-			name = name[:len(name)-5]
-			inst, err := loadInstance(name)
-			if err != nil {
-				continue
-			}
-			if isProcessAlive(inst.PID) {
-				return inst, nil
-			}
-			_ = removeInstance(name)
-		}
-	}
-	return nil, ErrUser("no running instances")
-}
-
 func readParamsFromStdin() (string, error) {
 	stat, _ := os.Stdin.Stat()
 	if (stat.Mode() & os.ModeCharDevice) != 0 {
@@ -70,22 +48,9 @@ func readParamsFromStdin() (string, error) {
 
 func runSend(_ *cobra.Command, args []string) error {
 	method := args[0]
-	var inst *Instance
-	var err error
-	if sendName != "" {
-		inst, err = loadInstance(sendName)
-		if err != nil {
-			return ErrUser("instance %s not found", sendName)
-		}
-		if !isProcessAlive(inst.PID) {
-			_ = removeInstance(sendName)
-			return ErrUser("instance %s not running", sendName)
-		}
-	} else {
-		inst, err = findFirstInstance()
-		if err != nil {
-			return err
-		}
+	inst, err := resolveInstance(sendName)
+	if err != nil {
+		return err
 	}
 	params := sendParams
 	if params == "" {
@@ -107,21 +72,10 @@ func runSend(_ *cobra.Command, args []string) error {
 	defer cancel()
 	var sessionID string
 	if sendTarget != "" && sendTarget != "browser" {
-		attachParams, _ := json.Marshal(map[string]any{"targetId": sendTarget, "flatten": true})
-		attachResp, err := conn.send(ctx, "Target.attachToTarget", attachParams, "")
+		sessionID, err = conn.attachToTarget(ctx, sendTarget)
 		if err != nil {
 			return ErrRuntime("attaching to target: %v", err)
 		}
-		if attachResp.Error != nil {
-			return ErrUser("attach error: %s", attachResp.Error.Message)
-		}
-		var result struct {
-			SessionID string `json:"sessionId"`
-		}
-		if err := json.Unmarshal(attachResp.Result, &result); err != nil {
-			return ErrRuntime("parsing attach response: %v", err)
-		}
-		sessionID = result.SessionID
 	}
 	resp, err := conn.send(ctx, method, paramsJSON, sessionID)
 	if err != nil {

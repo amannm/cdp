@@ -150,3 +150,21 @@ func (c *cdpConn) send(ctx context.Context, method string, params json.RawMessag
 func (c *cdpConn) close() {
 	_ = c.conn.Close()
 }
+
+func (c *cdpConn) attachToTarget(ctx context.Context, targetID string) (string, error) {
+	attachParams, _ := json.Marshal(map[string]any{"targetId": targetID, "flatten": true})
+	attachResp, err := c.send(ctx, "Target.attachToTarget", attachParams, "")
+	if err != nil {
+		return "", err
+	}
+	if attachResp.Error != nil {
+		return "", fmt.Errorf("attach error: %s", attachResp.Error.Message)
+	}
+	var result struct {
+		SessionID string `json:"sessionId"`
+	}
+	if err := json.Unmarshal(attachResp.Result, &result); err != nil {
+		return "", err
+	}
+	return result.SessionID, nil
+}

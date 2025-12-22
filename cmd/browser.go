@@ -352,6 +352,43 @@ func isProcessAlive(pid int) bool {
 	return err == nil
 }
 
+func findFirstInstance() (*Instance, error) {
+	entries, err := os.ReadDir(InstancesDir)
+	if err != nil {
+		return nil, ErrUser("no instances found")
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if len(name) > 5 && name[len(name)-5:] == ".json" {
+			name = name[:len(name)-5]
+			inst, err := loadInstance(name)
+			if err != nil {
+				continue
+			}
+			if isProcessAlive(inst.PID) {
+				return inst, nil
+			}
+			_ = removeInstance(name)
+		}
+	}
+	return nil, ErrUser("no running instances")
+}
+
+func resolveInstance(name string) (*Instance, error) {
+	if name != "" {
+		inst, err := loadInstance(name)
+		if err != nil {
+			return nil, ErrUser("instance %s not found", name)
+		}
+		if !isProcessAlive(inst.PID) {
+			_ = removeInstance(name)
+			return nil, ErrUser("instance %s not running", name)
+		}
+		return inst, nil
+	}
+	return findFirstInstance()
+}
+
 func runList(_ *cobra.Command, _ []string) error {
 	entries, err := os.ReadDir(InstancesDir)
 	if err != nil {
