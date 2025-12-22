@@ -2,6 +2,7 @@
 - A context-efficient tool for LLM agents to interact with the web on the user's behalf.
 
 # Requirements
+- Written in the latest version of the Go language.
 - Install/uninstall/upgrade a private local copy of Chromium.
 - Create/delete, start/stop, list any number of independent Chromium processes.
 - Exchange raw JSON CDP messages with a Chromium process over WebSockets.
