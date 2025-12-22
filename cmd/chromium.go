@@ -91,6 +91,9 @@ func detectPlatform() string {
 }
 
 func fetchVersionInfo() (*versionInfo, error) {
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "fetching version info from %s\n", versionURL)
+	}
 	resp, err := http.Get(versionURL)
 	if err != nil {
 		return nil, err
@@ -104,6 +107,9 @@ func fetchVersionInfo() (*versionInfo, error) {
 }
 
 func downloadFile(url, dest string) error {
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "downloading %s to %s\n", url, dest)
+	}
 	resp, err := http.Get(url)
 	if err != nil {
 		return err
@@ -188,7 +194,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if dlURL == "" {
-		return fmt.Errorf("no download for platform %s", platform)
+		return ErrRuntime("no download for platform %s", platform)
 	}
 	base := installPath
 	if base == "" {
@@ -203,16 +209,16 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	tmpZip := filepath.Join(base, "chrome.zip")
 	defer os.Remove(tmpZip)
 	if err := downloadFile(dlURL, tmpZip); err != nil {
-		return fmt.Errorf("downloading: %w", err)
+		return ErrRuntime("downloading: %v", err)
 	}
 	if err := extractZip(tmpZip, versionDir); err != nil {
 		os.RemoveAll(versionDir)
-		return fmt.Errorf("extracting: %w", err)
+		return ErrRuntime("extracting: %v", err)
 	}
 	current := filepath.Join(base, "current")
 	os.Remove(current)
 	if err := os.Symlink(channel.Version, current); err != nil {
-		return fmt.Errorf("creating symlink: %w", err)
+		return ErrRuntime("creating symlink: %v", err)
 	}
 	fmt.Println(binaryPath(versionDir, platform))
 	return nil
@@ -238,7 +244,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	if uninstallVer != "" {
 		target := filepath.Join(base, uninstallVer)
 		if err := os.RemoveAll(target); err != nil {
-			return fmt.Errorf("removing %s: %w", uninstallVer, err)
+			return ErrRuntime("removing %s: %v", uninstallVer, err)
 		}
 		current := filepath.Join(base, "current")
 		if link, err := os.Readlink(current); err == nil && link == uninstallVer {
@@ -253,7 +259,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 			fmt.Println("nothing to remove")
 			return nil
 		}
-		return err
+		return ErrRuntime("reading directory: %v", err)
 	}
 	for _, e := range entries {
 		os.RemoveAll(filepath.Join(base, e.Name()))
@@ -265,7 +271,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 func runUpgrade(cmd *cobra.Command, args []string) error {
 	platform := detectPlatform()
 	if platform == "" {
-		return fmt.Errorf("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
+		return ErrUser("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 	base := upgradePath
 	if base == "" {
@@ -274,15 +280,15 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	current := filepath.Join(base, "current")
 	currentVer, err := os.Readlink(current)
 	if err != nil {
-		return fmt.Errorf("no installation found (use 'chromium install' first)")
+		return ErrUser("no installation found (use 'chromium install' first)")
 	}
 	info, err := fetchVersionInfo()
 	if err != nil {
-		return fmt.Errorf("fetching version info: %w", err)
+		return ErrRuntime("fetching version info: %v", err)
 	}
 	channel, ok := info.Channels[upgradeChannel]
 	if !ok {
-		return fmt.Errorf("unknown channel: %s", upgradeChannel)
+		return ErrUser("unknown channel: %s", upgradeChannel)
 	}
 	if channel.Version == currentVer {
 		fmt.Println("already up to date")
@@ -290,7 +296,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	}
 	downloads, ok := channel.Downloads["chrome"]
 	if !ok {
-		return fmt.Errorf("no chrome download for channel %s", upgradeChannel)
+		return ErrRuntime("no chrome download for channel %s", upgradeChannel)
 	}
 	var dlURL string
 	for _, dl := range downloads {
@@ -300,23 +306,23 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if dlURL == "" {
-		return fmt.Errorf("no download for platform %s", platform)
+		return ErrRuntime("no download for platform %s", platform)
 	}
 	versionDir := filepath.Join(base, channel.Version)
 	if _, err := os.Stat(versionDir); err != nil {
 		tmpZip := filepath.Join(base, "chrome.zip")
 		defer os.Remove(tmpZip)
 		if err := downloadFile(dlURL, tmpZip); err != nil {
-			return fmt.Errorf("downloading: %w", err)
+			return ErrRuntime("downloading: %v", err)
 		}
 		if err := extractZip(tmpZip, versionDir); err != nil {
 			os.RemoveAll(versionDir)
-			return fmt.Errorf("extracting: %w", err)
+			return ErrRuntime("extracting: %v", err)
 		}
 	}
 	os.Remove(current)
 	if err := os.Symlink(channel.Version, current); err != nil {
-		return fmt.Errorf("updating symlink: %w", err)
+		return ErrRuntime("updating symlink: %v", err)
 	}
 	if upgradeClean && currentVer != channel.Version {
 		os.RemoveAll(filepath.Join(base, currentVer))

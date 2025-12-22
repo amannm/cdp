@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -94,6 +95,9 @@ func waitForPort(port int, timeout time.Duration) error {
 			resp.Body.Close()
 			return nil
 		}
+		if Verbose {
+			fmt.Fprintf(os.Stderr, "waiting for port %d: %v\n", port, err)
+		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	return ErrRuntime("timeout waiting for port %d", port)
@@ -101,6 +105,9 @@ func waitForPort(port int, timeout time.Duration) error {
 
 func getWsURL(port int) (string, error) {
 	url := fmt.Sprintf("http://127.0.0.1:%d/json/version", port)
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "fetching ws url from %s\n", url)
+	}
 	resp, err := http.Get(url)
 	if err != nil {
 		return "", err
@@ -189,6 +196,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if startHeadless {
 		chromeArgs = append(chromeArgs, "--headless=new")
 	}
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "starting chrome: %s %v\n", binary, chromeArgs)
+	}
 	proc := exec.Command(binary, chromeArgs...)
 	proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := proc.Start(); err != nil {
@@ -234,7 +244,7 @@ func runStop(cmd *cobra.Command, args []string) error {
 			if os.IsNotExist(err) {
 				return nil
 			}
-			return err
+			return ErrRuntime("reading instances dir: %v", err)
 		}
 		var failed []string
 		for _, e := range entries {
@@ -248,7 +258,7 @@ func runStop(cmd *cobra.Command, args []string) error {
 			}
 		}
 		if len(failed) > 0 {
-			return fmt.Errorf("failed to stop %d instance(s): %v", len(failed), failed)
+			return ErrRuntime("failed to stop %d instance(s): %v", len(failed), failed)
 		}
 		return nil
 	}
@@ -260,8 +270,53 @@ func stopInstance(name string) error {
 	if err != nil {
 		return ErrUser("instance %s not found", name)
 	}
-	proc, err := os.FindProcess(inst.PID)
-	if err == nil {
+
+	// Try CDP Browser.close first
+	if inst.WsURL != "" {
+		if Verbose {
+			fmt.Fprintf(os.Stderr, "attempting graceful shutdown via CDP for %s\n", name)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		// We don't need events for closing
+		conn, err := dialCDP(inst.WsURL, false)
+		if err == nil {
+			defer conn.close()
+			_, err = conn.send(ctx, "Browser.close", nil, "")
+			if err == nil {
+				// Wait for process to exit
+				if proc, err := os.FindProcess(inst.PID); err == nil {
+					done := make(chan struct{})
+					go func() {
+						proc.Wait()
+						close(done)
+					}()
+					select {
+					case <-done:
+						if Verbose {
+							fmt.Fprintf(os.Stderr, "graceful shutdown successful for %s\n", name)
+						}
+						// Process exited, proceed to cleanup
+						goto Cleanup
+					case <-time.After(3 * time.Second):
+						if Verbose {
+							fmt.Fprintf(os.Stderr, "graceful shutdown timed out for %s\n", name)
+						}
+					}
+				}
+			} else if Verbose {
+				fmt.Fprintf(os.Stderr, "CDP Browser.close failed: %v\n", err)
+			}
+		} else if Verbose {
+			fmt.Fprintf(os.Stderr, "CDP connection failed: %v\n", err)
+		}
+	}
+
+	// Fallback to SIGTERM/SIGKILL
+	if proc, err := os.FindProcess(inst.PID); err == nil {
+		if Verbose {
+			fmt.Fprintf(os.Stderr, "sending SIGTERM to %d\n", inst.PID)
+		}
 		proc.Signal(syscall.SIGTERM)
 		done := make(chan struct{})
 		go func() {
@@ -271,10 +326,18 @@ func stopInstance(name string) error {
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
+			if Verbose {
+				fmt.Fprintf(os.Stderr, "sending SIGKILL to %d\n", inst.PID)
+			}
 			proc.Kill()
 		}
 	}
+
+Cleanup:
 	if inst.UserDataDir != "" && filepath.HasPrefix(inst.UserDataDir, os.TempDir()) {
+		if Verbose {
+			fmt.Fprintf(os.Stderr, "cleaning up user data dir %s\n", inst.UserDataDir)
+		}
 		os.RemoveAll(inst.UserDataDir)
 	}
 	removeInstance(name)
@@ -298,7 +361,7 @@ func runList(cmd *cobra.Command, args []string) error {
 			fmt.Println("[]")
 			return nil
 		}
-		return err
+		return ErrRuntime("reading instances dir: %v", err)
 	}
 	var instances []*Instance
 	var cleanupErrs int

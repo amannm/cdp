@@ -24,3 +24,6 @@
 - Explicitly wired
 - Internally consistent
 - Artisanal
+
+# Additional constraints
+- No code comments.

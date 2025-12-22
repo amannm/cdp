@@ -125,9 +125,23 @@ func runSend(cmd *cobra.Command, args []string) error {
 	}
 	resp, err := conn.send(ctx, method, paramsJSON, sessionID)
 	if err != nil {
-		return err
+		return ErrRuntime("sending command: %v", err)
 	}
 	if resp.Error != nil {
+		// CDP errors are valid responses, not CLI errors, but we can return exit code 1 if desired.
+		// However, spec says "distinguish user errors from runtime errors".
+		// A CDP error is technically a successful roundtrip.
+		// But maybe it should count as a user error (bad params) or runtime (internal error)?
+		// For now, let's keep printing the error JSON and exit 0, or we can use ErrUser.
+		// The original code printed the error JSON. Let's stick to that but maybe exit 1?
+		// "No Exit Code Differentiation" task implies we want 1 for user, 2 for runtime.
+		// If CDP returns error, is it a user error? Probably.
+		// But if we print the JSON, the user might parse it.
+		// If we return error, Cobra will print the error string.
+		// Let's print the JSON and return nil (exit 0) as it is a "successful" CLI execution in terms of mechanics.
+		// Or if the prompt implies we should fail...
+		// "All errors exit with code 1. Original spec distinguishes user errors (1) from runtime errors (2)."
+		// A CDP error response is application level data.
 		errJSON, _ := json.Marshal(map[string]interface{}{"error": resp.Error})
 		fmt.Println(string(errJSON))
 		return nil

@@ -83,37 +83,41 @@ All planned commands are implemented and functional (~1,100 lines across 7 files
 
 ## Remaining Items
 
-### 7. No Exit Code Differentiation
+### 7. No Exit Code Differentiation ✓
 
 **Problem**: All errors exit with code 1. Original spec distinguishes user errors (1) from runtime errors (2).
 
-**Tasks**:
-- [ ] Define error types (user vs runtime)
-- [ ] Configure Cobra exit codes accordingly
+**Solution**:
+- Defined `UserError` and `RuntimeError` types in `cmd/root.go`.
+- Configured `cmd.Execute` to handle these types and exit with 1 or 2 respectively.
+- Updated all commands to use these error types.
+
+**Location**: `cmd/root.go`, `cmd/chromium.go`, `cmd/browser.go`, `cmd/send.go`, `cmd/listen.go`
 
 ---
 
-### 8. No Debug Mode
+### 8. No Debug Mode ✓
 
 **Problem**: No visibility into WebSocket frames or HTTP requests for troubleshooting.
 
-**Tasks**:
-- [ ] Add `--verbose` global flag
-- [ ] Log WebSocket traffic when enabled
-- [ ] Log HTTP requests for version discovery
+**Solution**:
+- Added `--verbose` global flag in `cmd/root.go`.
+- Added verbose logging to `cmd/cdp.go` (WS traffic), `cmd/browser.go` (process management), `cmd/chromium.go` (downloads).
+
+**Location**: `cmd/root.go`, `cmd/cdp.go`, `cmd/browser.go`, `cmd/chromium.go`
 
 ---
 
-### 9. SIGTERM Instead of CDP Shutdown
+### 9. SIGTERM Instead of CDP Shutdown ✓
 
 **Problem**: `browser stop` uses SIGTERM. Original spec suggested `Browser.close` CDP method.
 
-**Location**: `cmd/browser.go:258-283`
+**Solution**:
+- Updated `stopInstance` in `cmd/browser.go` to attempt `Browser.close` via CDP first.
+- Falls back to SIGTERM if CDP connection fails or times out.
+- Falls back to SIGKILL if SIGTERM times out.
 
-**Tasks**:
-- [ ] Try `Browser.close` via WebSocket first
-- [ ] Fall back to SIGTERM if WS unavailable
-- [ ] Keep SIGKILL as final fallback
+**Location**: `cmd/browser.go:258-283`
 
 ---
 
@@ -127,9 +131,9 @@ All planned commands are implemented and functional (~1,100 lines across 7 files
 | 4 | Download verification | ✓ Done |
 | 5 | Error handling fixes | ✓ Done |
 | 6 | Safe JSON construction | ✓ Done |
-| 7 | Exit code differentiation | Pending |
-| 8 | Debug mode | Pending |
-| 9 | CDP shutdown | Pending |
+| 7 | Exit code differentiation | ✓ Done |
+| 8 | Debug mode | ✓ Done |
+| 9 | CDP shutdown | ✓ Done |
 
 ---
 
