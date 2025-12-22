@@ -20,7 +20,8 @@ func init() {
 }
 
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
+	err := rootCmd.Execute()
+	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "error:", err)
 		switch {
 		case internal.IsUserError(err):

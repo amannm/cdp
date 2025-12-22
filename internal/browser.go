@@ -26,7 +26,10 @@ type Instance struct {
 
 func GenerateName() string {
 	b := make([]byte, 4)
-	_, _ = rand.Read(b)
+	_, err := rand.Read(b)
+	if err != nil {
+		panic(fmt.Sprintf("crypto/rand failed: %v", err))
+	}
 	return "browser-" + hex.EncodeToString(b)
 }
 
@@ -69,14 +72,16 @@ func GetWsURL(port int) (string, error) {
 	var info struct {
 		WebSocketDebuggerUrl string `json:"webSocketDebuggerUrl"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	err = json.NewDecoder(resp.Body).Decode(&info)
+	if err != nil {
 		return "", err
 	}
 	return info.WebSocketDebuggerUrl, nil
 }
 
 func SaveInstance(inst *Instance) error {
-	if err := os.MkdirAll(InstancesDir, 0755); err != nil {
+	err := os.MkdirAll(InstancesDir, 0755)
+	if err != nil {
 		return err
 	}
 	path := filepath.Join(InstancesDir, inst.Name+".json")
@@ -94,7 +99,8 @@ func LoadInstance(name string) (*Instance, error) {
 		return nil, err
 	}
 	var inst Instance
-	if err := json.Unmarshal(data, &inst); err != nil {
+	err = json.Unmarshal(data, &inst)
+	if err != nil {
 		return nil, err
 	}
 	return &inst, nil
@@ -119,7 +125,8 @@ func StopInstance(name string) error {
 			defer conn.Close()
 			_, err = conn.Send(ctx, "Browser.close", nil, "")
 			if err == nil {
-				if proc, err := os.FindProcess(inst.PID); err == nil {
+				proc, err := os.FindProcess(inst.PID)
+				if err == nil {
 					done := make(chan struct{})
 					go func() {
 						_, _ = proc.Wait()
@@ -141,7 +148,8 @@ func StopInstance(name string) error {
 		}
 	}
 	if !stopped && IsProcessAlive(inst.PID) {
-		if proc, err := os.FindProcess(inst.PID); err == nil {
+		proc, err := os.FindProcess(inst.PID)
+		if err == nil {
 			Term.Info("sending SIGTERM to %d\n", inst.PID)
 			_ = proc.Signal(syscall.SIGTERM)
 			done := make(chan struct{})
@@ -228,7 +236,8 @@ func StartBrowser(opts StartOptions) (*Instance, error) {
 	if name == "" {
 		name = GenerateName()
 	}
-	if _, err := LoadInstance(name); err == nil {
+	_, err = LoadInstance(name)
+	if err == nil {
 		return nil, ErrUser("instance %s already exists", name)
 	}
 	userDataDir := opts.UserDataDir
@@ -270,11 +279,13 @@ func StartBrowser(opts StartOptions) (*Instance, error) {
 	Term.Info("starting chrome: %s %v\n", binary, chromeArgs)
 	proc := exec.Command(binary, chromeArgs...)
 	proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := proc.Start(); err != nil {
+	err = proc.Start()
+	if err != nil {
 		cleanup()
 		return nil, ErrRuntime("starting chrome: %v", err)
 	}
-	if err := WaitForPort(port, 30*time.Second); err != nil {
+	err = WaitForPort(port, 30*time.Second)
+	if err != nil {
 		_ = proc.Process.Kill()
 		cleanup()
 		return nil, err
@@ -293,7 +304,8 @@ func StartBrowser(opts StartOptions) (*Instance, error) {
 		UserDataDir: userDataDir,
 		Started:     time.Now(),
 	}
-	if err := SaveInstance(inst); err != nil {
+	err = SaveInstance(inst)
+	if err != nil {
 		_ = proc.Process.Kill()
 		cleanup()
 		return nil, ErrRuntime("saving instance: %v", err)
@@ -316,7 +328,8 @@ func StopAllInstances() error {
 			continue
 		}
 		name = name[:len(name)-5]
-		if err := StopInstance(name); err != nil {
+		err := StopInstance(name)
+		if err != nil {
 			failed = append(failed, name)
 		}
 	}
@@ -347,7 +360,8 @@ func ListInstances() ([]*Instance, int, error) {
 			continue
 		}
 		if !IsProcessAlive(inst.PID) {
-			if err := RemoveInstance(name); err != nil {
+			err := RemoveInstance(name)
+			if err != nil {
 				cleanupErrs++
 			}
 			continue

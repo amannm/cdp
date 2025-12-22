@@ -72,13 +72,15 @@ func (c *CDPConn) readLoop() {
 		}
 		Term.Info("<- %s\n", string(data))
 		var msg CDPMessage
-		if err := json.Unmarshal(data, &msg); err != nil {
+		err = json.Unmarshal(data, &msg)
+		if err != nil {
 			Term.Info("json decode error: %v\n", err)
 			continue
 		}
 		if msg.ID != 0 {
 			c.Mu.Lock()
-			if ch, ok := c.Pending[msg.ID]; ok {
+			ch, ok := c.Pending[msg.ID]
+			if ok {
 				ch <- &msg
 				delete(c.Pending, msg.ID)
 			}
@@ -116,7 +118,8 @@ func (c *CDPConn) Send(ctx context.Context, method string, params json.RawMessag
 	}
 	c.Pending[id] = ch
 	c.Mu.Unlock()
-	if err := c.Conn.WriteMessage(websocket.TextMessage, data); err != nil {
+	err = c.Conn.WriteMessage(websocket.TextMessage, data)
+	if err != nil {
 		c.Mu.Lock()
 		delete(c.Pending, id)
 		c.Mu.Unlock()
@@ -152,7 +155,8 @@ func (c *CDPConn) AttachToTarget(ctx context.Context, targetID string) (string, 
 	var result struct {
 		SessionID string `json:"sessionId"`
 	}
-	if err := json.Unmarshal(attachResp.Result, &result); err != nil {
+	err = json.Unmarshal(attachResp.Result, &result)
+	if err != nil {
 		return "", err
 	}
 	return result.SessionID, nil

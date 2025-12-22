@@ -51,7 +51,8 @@ func FetchVersionInfo() (*VersionInfo, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var info VersionInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	err = json.NewDecoder(resp.Body).Decode(&info)
+	if err != nil {
 		return nil, err
 	}
 	return &info, nil
@@ -98,6 +99,10 @@ func DownloadFile(url, dest string) error {
 	if err != nil {
 		return err
 	}
+	err = f.Close()
+	if err != nil {
+		return err
+	}
 	if expectedLen > 0 && written != expectedLen {
 		return fmt.Errorf("download incomplete: got %d bytes, expected %d", written, expectedLen)
 	}
@@ -116,10 +121,16 @@ func ExtractZip(src, dest string) error {
 			return fmt.Errorf("invalid path: %s", f.Name)
 		}
 		if f.FileInfo().IsDir() {
-			_ = os.MkdirAll(path, f.Mode())
+			err := os.MkdirAll(path, f.Mode())
+			if err != nil {
+				return err
+			}
 			continue
 		}
-		_ = os.MkdirAll(filepath.Dir(path), 0755)
+		err := os.MkdirAll(filepath.Dir(path), 0755)
+		if err != nil {
+			return err
+		}
 		out, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
 		if err != nil {
 			return err
@@ -131,7 +142,10 @@ func ExtractZip(src, dest string) error {
 		}
 		_, err = io.Copy(out, rc)
 		_ = rc.Close()
-		_ = out.Close()
+		closeErr := out.Close()
+		if closeErr != nil && err == nil {
+			err = closeErr
+		}
 		if err != nil {
 			return err
 		}
@@ -141,16 +155,22 @@ func ExtractZip(src, dest string) error {
 
 func InstallChrome(base, version, dlURL string) (string, error) {
 	versionDir := filepath.Join(base, version)
-	if _, err := os.Stat(versionDir); err == nil {
+	_, err := os.Stat(versionDir)
+	if err == nil {
 		return versionDir, nil
 	}
-	_ = os.MkdirAll(base, 0755)
-	tmpZip := filepath.Join(base, "chrome.zip")
-	defer func() { _ = os.Remove(tmpZip) }()
-	if err := DownloadFile(dlURL, tmpZip); err != nil {
+	err = os.MkdirAll(base, 0755)
+	if err != nil {
 		return "", err
 	}
-	if err := ExtractZip(tmpZip, versionDir); err != nil {
+	tmpZip := filepath.Join(base, "chrome.zip")
+	defer func() { _ = os.Remove(tmpZip) }()
+	err = DownloadFile(dlURL, tmpZip)
+	if err != nil {
+		return "", err
+	}
+	err = ExtractZip(tmpZip, versionDir)
+	if err != nil {
 		_ = os.RemoveAll(versionDir)
 		return "", err
 	}
@@ -187,7 +207,8 @@ func Install(channel, base string) (string, error) {
 	}
 	current := filepath.Join(base, "current")
 	_ = os.Remove(current)
-	if err := os.Symlink(version, current); err != nil {
+	err = os.Symlink(version, current)
+	if err != nil {
 		return "", ErrRuntime("creating symlink: %v", err)
 	}
 	return BinaryPath(versionDir, platform), nil
@@ -199,11 +220,13 @@ func Uninstall(version, base string) error {
 	}
 	if version != "" {
 		target := filepath.Join(base, version)
-		if err := os.RemoveAll(target); err != nil {
+		err := os.RemoveAll(target)
+		if err != nil {
 			return ErrRuntime("removing %s: %v", version, err)
 		}
 		current := filepath.Join(base, "current")
-		if link, err := os.Readlink(current); err == nil && link == version {
+		link, err := os.Readlink(current)
+		if err == nil && link == version {
 			_ = os.Remove(current)
 		}
 		return nil
@@ -239,14 +262,15 @@ func Upgrade(channel, base string, clean bool) (string, error) {
 		return "", ErrRuntime("getting download url: %v", err)
 	}
 	if version == currentVer {
-		return "", nil // Already up to date
+		return "", nil
 	}
 	versionDir, err := InstallChrome(base, version, dlURL)
 	if err != nil {
 		return "", ErrRuntime("installing: %v", err)
 	}
 	_ = os.Remove(current)
-	if err := os.Symlink(version, current); err != nil {
+	err = os.Symlink(version, current)
+	if err != nil {
 		return "", ErrRuntime("updating symlink: %v", err)
 	}
 	if clean && currentVer != version {

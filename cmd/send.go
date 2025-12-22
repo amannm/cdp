@@ -55,7 +55,11 @@ func runSend(_ *cobra.Command, args []string) error {
 	}
 	params := sendParams
 	if params == "" {
-		params, _ = readParamsFromStdin()
+		var err error
+		params, err = readParamsFromStdin()
+		if err != nil {
+			return internal.ErrUser("reading stdin: %v", err)
+		}
 	}
 	var paramsJSON json.RawMessage
 	if params != "" {

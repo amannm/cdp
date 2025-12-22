@@ -8,8 +8,6 @@
 - Exchange raw JSON CDP messages with a Chromium process over WebSockets.
 
 # Technical hints
-- Use the Cobra library for the CLI.
-- Discover Chromium versions via https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json
 - Do not focus on writing tests or documentation at this time.
 
 # Reference material
