@@ -44,9 +44,7 @@ func DetectPlatform() string {
 }
 
 func FetchVersionInfo() (*VersionInfo, error) {
-	if Verbose {
-		_, _ = fmt.Fprintf(os.Stderr, "fetching version info from %s\n", VersionURL)
-	}
+	Term.Info("fetching version info from %s\n", VersionURL)
 	resp, err := http.Get(VersionURL)
 	if err != nil {
 		return nil, err
@@ -81,9 +79,7 @@ func GetDownloadURL(channelName, platform string) (string, string, error) {
 }
 
 func DownloadFile(url, dest string) error {
-	if Verbose {
-		_, _ = fmt.Fprintf(os.Stderr, "downloading %s to %s\n", url, dest)
-	}
+	Term.Info("downloading %s to %s\n", url, dest)
 	resp, err := http.Get(url)
 	if err != nil {
 		return err

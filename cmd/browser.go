@@ -4,7 +4,6 @@ import (
 	"cdp/internal"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -92,7 +91,7 @@ func runList(_ *cobra.Command, _ []string) error {
 	}
 	fmt.Println(string(out))
 	if cleanupErrs > 0 {
-		_, _ = fmt.Fprintf(os.Stderr, "warning: failed to cleanup %d stale instance(s)\n", cleanupErrs)
+		internal.Term.Error("warning: failed to cleanup %d stale instance(s)\n", cleanupErrs)
 	}
 	return nil
 }

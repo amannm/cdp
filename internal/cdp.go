@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sync"
 	"sync/atomic"
 
@@ -35,9 +34,7 @@ type CDPConn struct {
 }
 
 func DialCDP(wsURL string, withEvents bool) (*CDPConn, error) {
-	if Verbose {
-		_, _ = fmt.Fprintf(os.Stderr, "connecting to CDP: %s\n", wsURL)
-	}
+	Term.Info("connecting to CDP: %s\n", wsURL)
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		return nil, err
@@ -58,8 +55,8 @@ func (c *CDPConn) readLoop() {
 	for {
 		_, data, err := c.Conn.ReadMessage()
 		if err != nil {
-			if Verbose && !c.Closed {
-				_, _ = fmt.Fprintf(os.Stderr, "ws read error: %v\n", err)
+			if !c.Closed {
+				Term.Info("ws read error: %v\n", err)
 			}
 			c.Mu.Lock()
 			c.Closed = true
@@ -73,14 +70,10 @@ func (c *CDPConn) readLoop() {
 			c.Mu.Unlock()
 			return
 		}
-		if Verbose {
-			_, _ = fmt.Fprintf(os.Stderr, "<- %s\n", string(data))
-		}
+		Term.Info("<- %s\n", string(data))
 		var msg CDPMessage
 		if err := json.Unmarshal(data, &msg); err != nil {
-			if Verbose {
-				_, _ = fmt.Fprintf(os.Stderr, "json decode error: %v\n", err)
-			}
+			Term.Info("json decode error: %v\n", err)
 			continue
 		}
 		if msg.ID != 0 {
@@ -96,9 +89,7 @@ func (c *CDPConn) readLoop() {
 				select {
 				case c.Events <- &msg:
 				default:
-					if Verbose {
-						_, _ = fmt.Fprintf(os.Stderr, "event buffer full, dropping: %s\n", msg.Method)
-					}
+					Term.Info("event buffer full, dropping: %s\n", msg.Method)
 				}
 			}
 			c.Mu.Unlock()
@@ -116,9 +107,7 @@ func (c *CDPConn) Send(ctx context.Context, method string, params json.RawMessag
 	if err != nil {
 		return nil, err
 	}
-	if Verbose {
-		_, _ = fmt.Fprintf(os.Stderr, "-> %s\n", string(data))
-	}
+	Term.Info("-> %s\n", string(data))
 	ch := make(chan *CDPMessage, 1)
 	c.Mu.Lock()
 	if c.Pending == nil {

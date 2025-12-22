@@ -50,9 +50,7 @@ func WaitForPort(port int, timeout time.Duration) error {
 			_ = resp.Body.Close()
 			return nil
 		}
-		if Verbose {
-			_, _ = fmt.Fprintf(os.Stderr, "waiting for port %d: %v\n", port, err)
-		}
+		Term.Info("waiting for port %d: %v\n", port, err)
 		time.Sleep(100 * time.Millisecond)
 	}
 	return ErrRuntime("timeout waiting for port %d", port)
@@ -60,9 +58,7 @@ func WaitForPort(port int, timeout time.Duration) error {
 
 func GetWsURL(port int) (string, error) {
 	url := fmt.Sprintf("http://127.0.0.1:%d/json/version", port)
-	if Verbose {
-		_, _ = fmt.Fprintf(os.Stderr, "fetching ws url from %s\n", url)
-	}
+	Term.Info("fetching ws url from %s\n", url)
 	resp, err := http.Get(url)
 	if err != nil {
 		return "", err
@@ -115,9 +111,7 @@ func StopInstance(name string) error {
 	}
 	stopped := false
 	if inst.WsURL != "" {
-		if Verbose {
-			_, _ = fmt.Fprintf(os.Stderr, "attempting graceful shutdown via CDP for %s\n", name)
-		}
+		Term.Info("attempting graceful shutdown via CDP for %s\n", name)
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		conn, err := DialCDP(inst.WsURL, false)
@@ -133,28 +127,22 @@ func StopInstance(name string) error {
 					}()
 					select {
 					case <-done:
-						if Verbose {
-							_, _ = fmt.Fprintf(os.Stderr, "graceful shutdown successful for %s\n", name)
-						}
+						Term.Info("graceful shutdown successful for %s\n", name)
 						stopped = true
 					case <-time.After(3 * time.Second):
-						if Verbose {
-							_, _ = fmt.Fprintf(os.Stderr, "graceful shutdown timed out for %s\n", name)
-						}
+						Term.Info("graceful shutdown timed out for %s\n", name)
 					}
 				}
-			} else if Verbose {
-				_, _ = fmt.Fprintf(os.Stderr, "CDP Browser.close failed: %v\n", err)
+			} else {
+				Term.Info("CDP Browser.close failed: %v\n", err)
 			}
-		} else if Verbose {
-			_, _ = fmt.Fprintf(os.Stderr, "CDP connection failed: %v\n", err)
+		} else {
+			Term.Info("CDP connection failed: %v\n", err)
 		}
 	}
 	if !stopped && IsProcessAlive(inst.PID) {
 		if proc, err := os.FindProcess(inst.PID); err == nil {
-			if Verbose {
-				_, _ = fmt.Fprintf(os.Stderr, "sending SIGTERM to %d\n", inst.PID)
-			}
+			Term.Info("sending SIGTERM to %d\n", inst.PID)
 			_ = proc.Signal(syscall.SIGTERM)
 			done := make(chan struct{})
 			go func() {
@@ -164,21 +152,17 @@ func StopInstance(name string) error {
 			select {
 			case <-done:
 			case <-time.After(5 * time.Second):
-				if Verbose {
-					_, _ = fmt.Fprintf(os.Stderr, "sending SIGKILL to %d\n", inst.PID)
-				}
+				Term.Info("sending SIGKILL to %d\n", inst.PID)
 				_ = proc.Kill()
 			}
 		}
 	}
 	if inst.UserDataDir != "" && strings.HasPrefix(inst.UserDataDir, os.TempDir()) {
-		if Verbose {
-			_, _ = fmt.Fprintf(os.Stderr, "cleaning up user data dir %s\n", inst.UserDataDir)
-		}
+		Term.Info("cleaning up user data dir %s\n", inst.UserDataDir)
 		_ = os.RemoveAll(inst.UserDataDir)
 	}
 	_ = RemoveInstance(name)
-	fmt.Printf("stopped %s\n", name)
+	Term.Text("stopped %s\n", name)
 	return nil
 }
 
@@ -283,9 +267,7 @@ func StartBrowser(opts StartOptions) (*Instance, error) {
 	if opts.Headless {
 		chromeArgs = append(chromeArgs, "--headless=new")
 	}
-	if Verbose {
-		_, _ = fmt.Fprintf(os.Stderr, "starting chrome: %s %v\n", binary, chromeArgs)
-	}
+	Term.Info("starting chrome: %s %v\n", binary, chromeArgs)
 	proc := exec.Command(binary, chromeArgs...)
 	proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := proc.Start(); err != nil {
