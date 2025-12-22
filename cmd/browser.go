@@ -1,0 +1,260 @@
+package cmd
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"syscall"
+	"time"
+
+	"github.com/spf13/cobra"
+)
+
+type Instance struct {
+	Name        string    `json:"name"`
+	PID         int       `json:"pid"`
+	Port        int       `json:"port"`
+	WsURL       string    `json:"wsUrl"`
+	UserDataDir string    `json:"userDataDir"`
+	Started     time.Time `json:"started"`
+}
+
+var browserCmd = &cobra.Command{
+	Use:   "browser",
+	Short: "Manage browser instances",
+}
+
+var startCmd = &cobra.Command{
+	Use:   "start",
+	Short: "Start a new Chromium instance with remote debugging",
+	RunE:  runStart,
+}
+
+var stopCmd = &cobra.Command{
+	Use:   "stop",
+	Short: "Stop a running Chromium instance",
+	RunE:  runStop,
+}
+
+var (
+	startName        string
+	startPort        int
+	startHeadless    bool
+	startUserDataDir string
+	stopName         string
+	stopAll          bool
+)
+
+func init() {
+	startCmd.Flags().StringVar(&startName, "name", "", "Instance identifier")
+	startCmd.Flags().IntVar(&startPort, "port", 0, "Remote debugging port (0 = auto)")
+	startCmd.Flags().BoolVar(&startHeadless, "headless", false, "Run in headless mode")
+	startCmd.Flags().StringVar(&startUserDataDir, "user-data-dir", "", "Profile directory")
+	stopCmd.Flags().StringVar(&stopName, "name", "", "Instance name to stop")
+	stopCmd.Flags().BoolVar(&stopAll, "all", false, "Stop all instances")
+	browserCmd.AddCommand(startCmd, stopCmd)
+	rootCmd.AddCommand(browserCmd)
+}
+
+func generateName() string {
+	b := make([]byte, 4)
+	rand.Read(b)
+	return "browser-" + hex.EncodeToString(b)
+}
+
+func findChromeBinary() (string, error) {
+	current := filepath.Join(ChromiumDir, "current")
+	target, err := os.Readlink(current)
+	if err != nil {
+		return "", fmt.Errorf("no chromium installed: %w", err)
+	}
+	versionDir := filepath.Join(ChromiumDir, target)
+	platform := detectPlatform()
+	return binaryPath(versionDir, platform), nil
+}
+
+func waitForPort(port int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	url := fmt.Sprintf("http://127.0.0.1:%d/json/version", port)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("timeout waiting for port %d", port)
+}
+
+func getWsURL(port int) (string, error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/json/version", port)
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var info struct {
+		WebSocketDebuggerUrl string `json:"webSocketDebuggerUrl"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return "", err
+	}
+	return info.WebSocketDebuggerUrl, nil
+}
+
+func saveInstance(inst *Instance) error {
+	if err := os.MkdirAll(InstancesDir, 0755); err != nil {
+		return err
+	}
+	path := filepath.Join(InstancesDir, inst.Name+".json")
+	data, err := json.Marshal(inst)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+func loadInstance(name string) (*Instance, error) {
+	path := filepath.Join(InstancesDir, name+".json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var inst Instance
+	if err := json.Unmarshal(data, &inst); err != nil {
+		return nil, err
+	}
+	return &inst, nil
+}
+
+func removeInstance(name string) error {
+	return os.Remove(filepath.Join(InstancesDir, name+".json"))
+}
+
+func runStart(cmd *cobra.Command, args []string) error {
+	binary, err := findChromeBinary()
+	if err != nil {
+		return err
+	}
+	name := startName
+	if name == "" {
+		name = generateName()
+	}
+	if _, err := loadInstance(name); err == nil {
+		return fmt.Errorf("instance %s already exists", name)
+	}
+	userDataDir := startUserDataDir
+	if userDataDir == "" {
+		userDataDir, err = os.MkdirTemp("", "cdp-"+name+"-")
+		if err != nil {
+			return fmt.Errorf("creating temp dir: %w", err)
+		}
+	}
+	port := startPort
+	if port == 0 {
+		port = 9222
+		for i := 0; i < 100; i++ {
+			if _, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/json/version", port)); err != nil {
+				break
+			}
+			port++
+		}
+	}
+	chromeArgs := []string{
+		"--remote-debugging-port=" + strconv.Itoa(port),
+		"--user-data-dir=" + userDataDir,
+		"--no-first-run",
+		"--remote-allow-origins=*",
+	}
+	if startHeadless {
+		chromeArgs = append(chromeArgs, "--headless=new")
+	}
+	proc := exec.Command(binary, chromeArgs...)
+	proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := proc.Start(); err != nil {
+		return fmt.Errorf("starting chrome: %w", err)
+	}
+	if err := waitForPort(port, 30*time.Second); err != nil {
+		proc.Process.Kill()
+		return err
+	}
+	wsURL, err := getWsURL(port)
+	if err != nil {
+		proc.Process.Kill()
+		return fmt.Errorf("getting ws url: %w", err)
+	}
+	inst := &Instance{
+		Name:        name,
+		PID:         proc.Process.Pid,
+		Port:        port,
+		WsURL:       wsURL,
+		UserDataDir: userDataDir,
+		Started:     time.Now(),
+	}
+	if err := saveInstance(inst); err != nil {
+		proc.Process.Kill()
+		return fmt.Errorf("saving instance: %w", err)
+	}
+	out, _ := json.Marshal(inst)
+	fmt.Println(string(out))
+	return nil
+}
+
+func runStop(cmd *cobra.Command, args []string) error {
+	if !stopAll && stopName == "" {
+		return fmt.Errorf("--name or --all required")
+	}
+	if stopAll {
+		entries, err := os.ReadDir(InstancesDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if filepath.Ext(name) != ".json" {
+				continue
+			}
+			name = name[:len(name)-5]
+			stopInstance(name)
+		}
+		return nil
+	}
+	return stopInstance(stopName)
+}
+
+func stopInstance(name string) error {
+	inst, err := loadInstance(name)
+	if err != nil {
+		return fmt.Errorf("instance %s not found", name)
+	}
+	proc, err := os.FindProcess(inst.PID)
+	if err == nil {
+		proc.Signal(syscall.SIGTERM)
+		done := make(chan struct{})
+		go func() {
+			proc.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			proc.Kill()
+		}
+	}
+	if inst.UserDataDir != "" && filepath.HasPrefix(inst.UserDataDir, os.TempDir()) {
+		os.RemoveAll(inst.UserDataDir)
+	}
+	removeInstance(name)
+	fmt.Printf("stopped %s\n", name)
+	return nil
+}
