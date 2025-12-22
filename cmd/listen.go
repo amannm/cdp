@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"cdp/internal"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -36,42 +37,29 @@ func init() {
 
 func runListen(_ *cobra.Command, args []string) error {
 	domain := args[0]
-	inst, err := resolveInstance(listenName)
+	inst, err := internal.ResolveInstance(listenName)
 	if err != nil {
 		return err
 	}
-	conn, err := dialCDP(inst.WsURL, true)
-	if err != nil {
-		return ErrRuntime("connecting: %v", err)
-	}
-	defer conn.close()
-	ctx := context.Background()
-	var sessionID string
-	if listenTarget != "" {
-		sessionID, err = conn.attachToTarget(ctx, listenTarget)
-		if err != nil {
-			return ErrRuntime("attaching to target: %v", err)
-		}
-	}
-	enableMethod := domain + ".enable"
-	enableResp, err := conn.send(ctx, enableMethod, nil, sessionID)
-	if err != nil {
-		return ErrRuntime("enabling %s: %v", domain, err)
-	}
-	if enableResp.Error != nil {
-		return ErrUser("enable error: %s", enableResp.Error.Message)
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		cancel()
+	}()
+	eventCh := make(chan *internal.CDPMessage, 100)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- internal.Listen(ctx, inst.WsURL, listenTarget, domain, eventCh)
+	}()
 	count := 0
 	for {
 		select {
-		case <-sigCh:
-			return nil
-		case event, ok := <-conn.events:
-			if !ok {
-				return nil
-			}
+		case err := <-errCh:
+			return err
+		case event := <-eventCh:
 			if listenFilter != "" && !strings.HasPrefix(event.Method, listenFilter) {
 				continue
 			}
@@ -84,12 +72,17 @@ func runListen(_ *cobra.Command, args []string) error {
 				}
 				out["params"] = params
 			}
-			data, _ := json.Marshal(out)
+			data, err := json.Marshal(out)
+			if err != nil {
+				return err
+			}
 			fmt.Println(string(data))
 			count++
 			if listenCount > 0 && count >= listenCount {
 				return nil
 			}
+		case <-ctx.Done():
+			return nil
 		}
 	}
 }

@@ -1,29 +1,12 @@
 package cmd
 
 import (
-	"errors"
+	"cdp/internal"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 )
-
-type UserError struct{ Err error }
-type RuntimeError struct{ Err error }
-
-func (e UserError) Error() string    { return e.Err.Error() }
-func (e RuntimeError) Error() string { return e.Err.Error() }
-func (e UserError) Unwrap() error    { return e.Err }
-func (e RuntimeError) Unwrap() error { return e.Err }
-
-func ErrUser(format string, args ...any) error {
-	return UserError{Err: fmt.Errorf(format, args...)}
-}
-func ErrRuntime(format string, args ...any) error {
-	return RuntimeError{Err: fmt.Errorf(format, args...)}
-}
-
-var Verbose bool
 
 var rootCmd = &cobra.Command{
 	Use:           "cdp",
@@ -34,18 +17,16 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.PersistentFlags().BoolVarP(&Verbose, "verbose", "v", false, "Enable debug output")
+	rootCmd.PersistentFlags().BoolVarP(&internal.Verbose, "verbose", "v", false, "Enable debug output")
 }
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "error:", err)
-		var userErr UserError
-		var runtimeErr RuntimeError
 		switch {
-		case errors.As(err, &userErr):
+		case internal.IsUserError(err):
 			os.Exit(1)
-		case errors.As(err, &runtimeErr):
+		case internal.IsRuntimeError(err):
 			os.Exit(2)
 		default:
 			os.Exit(1)

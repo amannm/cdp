@@ -1,4 +1,4 @@
-package cmd
+package internal
 
 import (
 	"os"
@@ -9,4 +9,5 @@ var (
 	BaseDir      = filepath.Join(os.Getenv("HOME"), ".cdp")
 	ChromiumDir  = filepath.Join(BaseDir, "chromium")
 	InstancesDir = filepath.Join(BaseDir, "instances")
+	Verbose      bool
 )

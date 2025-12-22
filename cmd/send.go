@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"cdp/internal"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -48,7 +49,7 @@ func readParamsFromStdin() (string, error) {
 
 func runSend(_ *cobra.Command, args []string) error {
 	method := args[0]
-	inst, err := resolveInstance(sendName)
+	inst, err := internal.ResolveInstance(sendName)
 	if err != nil {
 		return err
 	}
@@ -59,27 +60,15 @@ func runSend(_ *cobra.Command, args []string) error {
 	var paramsJSON json.RawMessage
 	if params != "" {
 		if !json.Valid([]byte(params)) {
-			return ErrUser("invalid JSON params")
+			return internal.ErrUser("invalid JSON params")
 		}
 		paramsJSON = json.RawMessage(params)
 	}
-	conn, err := dialCDP(inst.WsURL, false)
-	if err != nil {
-		return ErrRuntime("connecting: %v", err)
-	}
-	defer conn.close()
 	ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
 	defer cancel()
-	var sessionID string
-	if sendTarget != "" && sendTarget != "browser" {
-		sessionID, err = conn.attachToTarget(ctx, sendTarget)
-		if err != nil {
-			return ErrRuntime("attaching to target: %v", err)
-		}
-	}
-	resp, err := conn.send(ctx, method, paramsJSON, sessionID)
+	resp, err := internal.Send(ctx, inst.WsURL, sendTarget, method, paramsJSON)
 	if err != nil {
-		return ErrRuntime("sending command: %v", err)
+		return err
 	}
 	if resp.Error != nil {
 		errJSON, _ := json.Marshal(map[string]any{"error": resp.Error})
