@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Error types for exit code differentiation
 type UserError struct{ Err error }
 type RuntimeError struct{ Err error }
 
@@ -17,7 +16,6 @@ func (e RuntimeError) Error() string { return e.Err.Error() }
 func (e UserError) Unwrap() error    { return e.Err }
 func (e RuntimeError) Unwrap() error { return e.Err }
 
-// Constructors
 func ErrUser(format string, args ...interface{}) error {
 	return UserError{Err: fmt.Errorf(format, args...)}
 }
@@ -41,7 +39,7 @@ func init() {
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		_, _ = fmt.Fprintln(os.Stderr, "error:", err)
 		var userErr UserError
 		var runtimeErr RuntimeError
 		switch {
@@ -50,7 +48,7 @@ func Execute() {
 		case errors.As(err, &runtimeErr):
 			os.Exit(2)
 		default:
-			os.Exit(1) // Default to user error
+			os.Exit(1)
 		}
 	}
 }

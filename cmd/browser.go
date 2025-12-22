@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -71,7 +72,7 @@ func init() {
 
 func generateName() string {
 	b := make([]byte, 4)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return "browser-" + hex.EncodeToString(b)
 }
 
@@ -92,11 +93,11 @@ func waitForPort(port int, timeout time.Duration) error {
 	for time.Now().Before(deadline) {
 		resp, err := http.Get(url)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return nil
 		}
 		if Verbose {
-			fmt.Fprintf(os.Stderr, "waiting for port %d: %v\n", port, err)
+			_, _ = fmt.Fprintf(os.Stderr, "waiting for port %d: %v\n", port, err)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -106,13 +107,13 @@ func waitForPort(port int, timeout time.Duration) error {
 func getWsURL(port int) (string, error) {
 	url := fmt.Sprintf("http://127.0.0.1:%d/json/version", port)
 	if Verbose {
-		fmt.Fprintf(os.Stderr, "fetching ws url from %s\n", url)
+		_, _ = fmt.Fprintf(os.Stderr, "fetching ws url from %s\n", url)
 	}
 	resp, err := http.Get(url)
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var info struct {
 		WebSocketDebuggerUrl string `json:"webSocketDebuggerUrl"`
 	}
@@ -174,7 +175,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 	cleanup := func() {
 		if tempDir {
-			os.RemoveAll(userDataDir)
+			_ = os.RemoveAll(userDataDir)
 		}
 	}
 	port := startPort
@@ -192,12 +193,13 @@ func runStart(cmd *cobra.Command, args []string) error {
 		"--user-data-dir=" + userDataDir,
 		"--no-first-run",
 		"--remote-allow-origins=*",
+		"--disable-infobars",
 	}
 	if startHeadless {
 		chromeArgs = append(chromeArgs, "--headless=new")
 	}
 	if Verbose {
-		fmt.Fprintf(os.Stderr, "starting chrome: %s %v\n", binary, chromeArgs)
+		_, _ = fmt.Fprintf(os.Stderr, "starting chrome: %s %v\n", binary, chromeArgs)
 	}
 	proc := exec.Command(binary, chromeArgs...)
 	proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -206,13 +208,13 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return ErrRuntime("starting chrome: %v", err)
 	}
 	if err := waitForPort(port, 30*time.Second); err != nil {
-		proc.Process.Kill()
+		_ = proc.Process.Kill()
 		cleanup()
 		return err
 	}
 	wsURL, err := getWsURL(port)
 	if err != nil {
-		proc.Process.Kill()
+		_ = proc.Process.Kill()
 		cleanup()
 		return ErrRuntime("getting ws url: %v", err)
 	}
@@ -225,7 +227,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		Started:     time.Now(),
 	}
 	if err := saveInstance(inst); err != nil {
-		proc.Process.Kill()
+		_ = proc.Process.Kill()
 		cleanup()
 		return ErrRuntime("saving instance: %v", err)
 	}
@@ -270,77 +272,71 @@ func stopInstance(name string) error {
 	if err != nil {
 		return ErrUser("instance %s not found", name)
 	}
-
-	// Try CDP Browser.close first
+	stopped := false
 	if inst.WsURL != "" {
 		if Verbose {
-			fmt.Fprintf(os.Stderr, "attempting graceful shutdown via CDP for %s\n", name)
+			_, _ = fmt.Fprintf(os.Stderr, "attempting graceful shutdown via CDP for %s\n", name)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		// We don't need events for closing
 		conn, err := dialCDP(inst.WsURL, false)
 		if err == nil {
 			defer conn.close()
 			_, err = conn.send(ctx, "Browser.close", nil, "")
 			if err == nil {
-				// Wait for process to exit
 				if proc, err := os.FindProcess(inst.PID); err == nil {
 					done := make(chan struct{})
 					go func() {
-						proc.Wait()
+						_, _ = proc.Wait()
 						close(done)
 					}()
 					select {
 					case <-done:
 						if Verbose {
-							fmt.Fprintf(os.Stderr, "graceful shutdown successful for %s\n", name)
+							_, _ = fmt.Fprintf(os.Stderr, "graceful shutdown successful for %s\n", name)
 						}
-						// Process exited, proceed to cleanup
-						goto Cleanup
+						stopped = true
 					case <-time.After(3 * time.Second):
 						if Verbose {
-							fmt.Fprintf(os.Stderr, "graceful shutdown timed out for %s\n", name)
+							_, _ = fmt.Fprintf(os.Stderr, "graceful shutdown timed out for %s\n", name)
 						}
 					}
 				}
 			} else if Verbose {
-				fmt.Fprintf(os.Stderr, "CDP Browser.close failed: %v\n", err)
+				_, _ = fmt.Fprintf(os.Stderr, "CDP Browser.close failed: %v\n", err)
 			}
 		} else if Verbose {
-			fmt.Fprintf(os.Stderr, "CDP connection failed: %v\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "CDP connection failed: %v\n", err)
 		}
 	}
-
-	// Fallback to SIGTERM/SIGKILL
-	if proc, err := os.FindProcess(inst.PID); err == nil {
-		if Verbose {
-			fmt.Fprintf(os.Stderr, "sending SIGTERM to %d\n", inst.PID)
-		}
-		proc.Signal(syscall.SIGTERM)
-		done := make(chan struct{})
-		go func() {
-			proc.Wait()
-			close(done)
-		}()
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
+	if !stopped && isProcessAlive(inst.PID) {
+		if proc, err := os.FindProcess(inst.PID); err == nil {
 			if Verbose {
-				fmt.Fprintf(os.Stderr, "sending SIGKILL to %d\n", inst.PID)
+				_, _ = fmt.Fprintf(os.Stderr, "sending SIGTERM to %d\n", inst.PID)
 			}
-			proc.Kill()
+			_ = proc.Signal(syscall.SIGTERM)
+			done := make(chan struct{})
+			go func() {
+				_, _ = proc.Wait()
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				if Verbose {
+					_, _ = fmt.Fprintf(os.Stderr, "sending SIGKILL to %d\n", inst.PID)
+				}
+				_ = proc.Kill()
+			}
 		}
 	}
-
-Cleanup:
-	if inst.UserDataDir != "" && filepath.HasPrefix(inst.UserDataDir, os.TempDir()) {
+	if inst.UserDataDir != "" && strings.HasPrefix(inst.UserDataDir, os.TempDir()) {
 		if Verbose {
-			fmt.Fprintf(os.Stderr, "cleaning up user data dir %s\n", inst.UserDataDir)
+			_, _ = fmt.Fprintf(os.Stderr, "cleaning up user data dir %s\n", inst.UserDataDir)
 		}
-		os.RemoveAll(inst.UserDataDir)
+		_ = os.RemoveAll(inst.UserDataDir)
 	}
-	removeInstance(name)
+	_ = removeInstance(name)
 	fmt.Printf("stopped %s\n", name)
 	return nil
 }
@@ -389,7 +385,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	out, _ := json.Marshal(instances)
 	fmt.Println(string(out))
 	if cleanupErrs > 0 {
-		fmt.Fprintf(os.Stderr, "warning: failed to cleanup %d stale instance(s)\n", cleanupErrs)
+		_, _ = fmt.Fprintf(os.Stderr, "warning: failed to cleanup %d stale instance(s)\n", cleanupErrs)
 	}
 	return nil
 }
