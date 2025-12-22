@@ -1,12 +1,7 @@
 package main
 
-import (
-	"cdp/cmd"
-	"os"
-)
+import "cdp/cmd"
 
 func main() {
-	if err := cmd.Execute(); err != nil {
-		os.Exit(1)
-	}
+	cmd.Execute()
 }

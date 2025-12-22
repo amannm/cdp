@@ -112,13 +112,20 @@ func downloadFile(url, dest string) error {
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("download failed: %s", resp.Status)
 	}
+	expectedLen := resp.ContentLength
 	f, err := os.Create(dest)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	_, err = io.Copy(f, resp.Body)
-	return err
+	written, err := io.Copy(f, resp.Body)
+	if err != nil {
+		return err
+	}
+	if expectedLen > 0 && written != expectedLen {
+		return fmt.Errorf("download incomplete: got %d bytes, expected %d", written, expectedLen)
+	}
+	return nil
 }
 
 func extractZip(src, dest string) error {
@@ -159,19 +166,19 @@ func extractZip(src, dest string) error {
 func runInstall(cmd *cobra.Command, args []string) error {
 	platform := detectPlatform()
 	if platform == "" {
-		return fmt.Errorf("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
+		return ErrUser("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 	info, err := fetchVersionInfo()
 	if err != nil {
-		return fmt.Errorf("fetching version info: %w", err)
+		return ErrRuntime("fetching version info: %v", err)
 	}
 	channel, ok := info.Channels[installChannel]
 	if !ok {
-		return fmt.Errorf("unknown channel: %s", installChannel)
+		return ErrUser("unknown channel: %s", installChannel)
 	}
 	downloads, ok := channel.Downloads["chrome"]
 	if !ok {
-		return fmt.Errorf("no chrome download for channel %s", installChannel)
+		return ErrRuntime("no chrome download for channel %s", installChannel)
 	}
 	var dlURL string
 	for _, dl := range downloads {

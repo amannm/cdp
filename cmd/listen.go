@@ -1,16 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"syscall"
 
-	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
 )
 
@@ -36,103 +34,6 @@ func init() {
 	rootCmd.AddCommand(listenCmd)
 }
 
-type eventConn struct {
-	conn    *websocket.Conn
-	nextID  int64
-	pending map[int64]chan *cdpMessage
-	events  chan *cdpMessage
-	mu      sync.Mutex
-	closed  bool
-}
-
-func newEventConn(wsURL string) (*eventConn, error) {
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	c := &eventConn{
-		conn:    conn,
-		nextID:  1,
-		pending: make(map[int64]chan *cdpMessage),
-		events:  make(chan *cdpMessage, 100),
-	}
-	go c.readLoop()
-	return c, nil
-}
-
-func (c *eventConn) readLoop() {
-	for {
-		_, data, err := c.conn.ReadMessage()
-		if err != nil {
-			c.mu.Lock()
-			c.closed = true
-			for _, ch := range c.pending {
-				close(ch)
-			}
-			c.pending = nil
-			close(c.events)
-			c.mu.Unlock()
-			return
-		}
-		var msg cdpMessage
-		if err := json.Unmarshal(data, &msg); err != nil {
-			continue
-		}
-		if msg.ID != 0 {
-			c.mu.Lock()
-			if ch, ok := c.pending[msg.ID]; ok {
-				ch <- &msg
-				delete(c.pending, msg.ID)
-			}
-			c.mu.Unlock()
-		} else if msg.Method != "" {
-			c.mu.Lock()
-			if !c.closed {
-				select {
-				case c.events <- &msg:
-				default:
-				}
-			}
-			c.mu.Unlock()
-		}
-	}
-}
-
-func (c *eventConn) send(method string, params json.RawMessage, sessionID string) (*cdpMessage, error) {
-	id := atomic.AddInt64(&c.nextID, 1)
-	msg := cdpMessage{ID: id, Method: method, Params: params}
-	if sessionID != "" {
-		msg.SessionID = sessionID
-	}
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return nil, err
-	}
-	ch := make(chan *cdpMessage, 1)
-	c.mu.Lock()
-	if c.pending == nil {
-		c.mu.Unlock()
-		return nil, fmt.Errorf("connection closed")
-	}
-	c.pending[id] = ch
-	c.mu.Unlock()
-	if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
-		c.mu.Lock()
-		delete(c.pending, id)
-		c.mu.Unlock()
-		return nil, err
-	}
-	resp, ok := <-ch
-	if !ok {
-		return nil, fmt.Errorf("connection closed")
-	}
-	return resp, nil
-}
-
-func (c *eventConn) close() {
-	c.conn.Close()
-}
-
 func runListen(cmd *cobra.Command, args []string) error {
 	domain := args[0]
 	var inst *Instance
@@ -140,11 +41,11 @@ func runListen(cmd *cobra.Command, args []string) error {
 	if listenName != "" {
 		inst, err = loadInstance(listenName)
 		if err != nil {
-			return fmt.Errorf("instance %s not found", listenName)
+			return ErrUser("instance %s not found", listenName)
 		}
 		if !isProcessAlive(inst.PID) {
 			removeInstance(listenName)
-			return fmt.Errorf("instance %s not running", listenName)
+			return ErrUser("instance %s not running", listenName)
 		}
 	} else {
 		inst, err = findFirstInstance()
@@ -152,35 +53,37 @@ func runListen(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	}
-	conn, err := newEventConn(inst.WsURL)
+	conn, err := dialCDP(inst.WsURL, true)
 	if err != nil {
-		return fmt.Errorf("connecting: %w", err)
+		return ErrRuntime("connecting: %v", err)
 	}
 	defer conn.close()
+	ctx := context.Background()
 	var sessionID string
 	if listenTarget != "" {
-		attachResp, err := conn.send("Target.attachToTarget", json.RawMessage(fmt.Sprintf(`{"targetId":"%s","flatten":true}`, listenTarget)), "")
+		attachParams, _ := json.Marshal(map[string]interface{}{"targetId": listenTarget, "flatten": true})
+		attachResp, err := conn.send(ctx, "Target.attachToTarget", attachParams, "")
 		if err != nil {
-			return fmt.Errorf("attaching to target: %w", err)
+			return ErrRuntime("attaching to target: %v", err)
 		}
 		if attachResp.Error != nil {
-			return fmt.Errorf("attach error: %s", attachResp.Error.Message)
+			return ErrUser("attach error: %s", attachResp.Error.Message)
 		}
 		var result struct {
 			SessionID string `json:"sessionId"`
 		}
 		if err := json.Unmarshal(attachResp.Result, &result); err != nil {
-			return fmt.Errorf("parsing attach response: %w", err)
+			return ErrRuntime("parsing attach response: %v", err)
 		}
 		sessionID = result.SessionID
 	}
 	enableMethod := domain + ".enable"
-	enableResp, err := conn.send(enableMethod, nil, sessionID)
+	enableResp, err := conn.send(ctx, enableMethod, nil, sessionID)
 	if err != nil {
-		return fmt.Errorf("enabling %s: %w", domain, err)
+		return ErrRuntime("enabling %s: %v", domain, err)
 	}
 	if enableResp.Error != nil {
-		return fmt.Errorf("enable error: %s", enableResp.Error.Message)
+		return ErrUser("enable error: %s", enableResp.Error.Message)
 	}
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

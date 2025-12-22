@@ -78,7 +78,7 @@ func findChromeBinary() (string, error) {
 	current := filepath.Join(ChromiumDir, "current")
 	target, err := os.Readlink(current)
 	if err != nil {
-		return "", fmt.Errorf("no chromium installed: %w", err)
+		return "", ErrUser("no chromium installed (run 'chromium install' first)")
 	}
 	versionDir := filepath.Join(ChromiumDir, target)
 	platform := detectPlatform()
@@ -96,7 +96,7 @@ func waitForPort(port int, timeout time.Duration) error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return fmt.Errorf("timeout waiting for port %d", port)
+	return ErrRuntime("timeout waiting for port %d", port)
 }
 
 func getWsURL(port int) (string, error) {
@@ -154,13 +154,20 @@ func runStart(cmd *cobra.Command, args []string) error {
 		name = generateName()
 	}
 	if _, err := loadInstance(name); err == nil {
-		return fmt.Errorf("instance %s already exists", name)
+		return ErrUser("instance %s already exists", name)
 	}
 	userDataDir := startUserDataDir
+	tempDir := false
 	if userDataDir == "" {
 		userDataDir, err = os.MkdirTemp("", "cdp-"+name+"-")
 		if err != nil {
-			return fmt.Errorf("creating temp dir: %w", err)
+			return ErrRuntime("creating temp dir: %v", err)
+		}
+		tempDir = true
+	}
+	cleanup := func() {
+		if tempDir {
+			os.RemoveAll(userDataDir)
 		}
 	}
 	port := startPort
@@ -185,16 +192,19 @@ func runStart(cmd *cobra.Command, args []string) error {
 	proc := exec.Command(binary, chromeArgs...)
 	proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := proc.Start(); err != nil {
-		return fmt.Errorf("starting chrome: %w", err)
+		cleanup()
+		return ErrRuntime("starting chrome: %v", err)
 	}
 	if err := waitForPort(port, 30*time.Second); err != nil {
 		proc.Process.Kill()
+		cleanup()
 		return err
 	}
 	wsURL, err := getWsURL(port)
 	if err != nil {
 		proc.Process.Kill()
-		return fmt.Errorf("getting ws url: %w", err)
+		cleanup()
+		return ErrRuntime("getting ws url: %v", err)
 	}
 	inst := &Instance{
 		Name:        name,
@@ -206,7 +216,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 	if err := saveInstance(inst); err != nil {
 		proc.Process.Kill()
-		return fmt.Errorf("saving instance: %w", err)
+		cleanup()
+		return ErrRuntime("saving instance: %v", err)
 	}
 	out, _ := json.Marshal(inst)
 	fmt.Println(string(out))
@@ -215,7 +226,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 func runStop(cmd *cobra.Command, args []string) error {
 	if !stopAll && stopName == "" {
-		return fmt.Errorf("--name or --all required")
+		return ErrUser("--name or --all required")
 	}
 	if stopAll {
 		entries, err := os.ReadDir(InstancesDir)
@@ -225,13 +236,19 @@ func runStop(cmd *cobra.Command, args []string) error {
 			}
 			return err
 		}
+		var failed []string
 		for _, e := range entries {
 			name := e.Name()
 			if filepath.Ext(name) != ".json" {
 				continue
 			}
 			name = name[:len(name)-5]
-			stopInstance(name)
+			if err := stopInstance(name); err != nil {
+				failed = append(failed, name)
+			}
+		}
+		if len(failed) > 0 {
+			return fmt.Errorf("failed to stop %d instance(s): %v", len(failed), failed)
 		}
 		return nil
 	}
@@ -241,7 +258,7 @@ func runStop(cmd *cobra.Command, args []string) error {
 func stopInstance(name string) error {
 	inst, err := loadInstance(name)
 	if err != nil {
-		return fmt.Errorf("instance %s not found", name)
+		return ErrUser("instance %s not found", name)
 	}
 	proc, err := os.FindProcess(inst.PID)
 	if err == nil {
@@ -284,6 +301,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	var instances []*Instance
+	var cleanupErrs int
 	for _, e := range entries {
 		name := e.Name()
 		if filepath.Ext(name) != ".json" {
@@ -295,7 +313,9 @@ func runList(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		if !isProcessAlive(inst.PID) {
-			removeInstance(name)
+			if err := removeInstance(name); err != nil {
+				cleanupErrs++
+			}
 			continue
 		}
 		instances = append(instances, inst)
@@ -305,5 +325,8 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 	out, _ := json.Marshal(instances)
 	fmt.Println(string(out))
+	if cleanupErrs > 0 {
+		fmt.Fprintf(os.Stderr, "warning: failed to cleanup %d stale instance(s)\n", cleanupErrs)
+	}
 	return nil
 }
