@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"cdp/internal"
+	"cdp/internal/utility"
 	"encoding/json"
 	"fmt"
 
@@ -72,7 +73,7 @@ func runStart(_ *cobra.Command, _ []string) error {
 
 func runStop(_ *cobra.Command, _ []string) error {
 	if !stopAll && stopName == "" {
-		return internal.ErrUser("--name or --all required")
+		return utility.ErrUser("--name or --all required")
 	}
 	if stopAll {
 		return internal.StopAllInstances()
@@ -91,7 +92,7 @@ func runList(_ *cobra.Command, _ []string) error {
 	}
 	fmt.Println(string(out))
 	if cleanupErrs > 0 {
-		internal.Term.Error("warning: failed to cleanup %d stale instance(s)\n", cleanupErrs)
+		utility.Term.Error("warning: failed to cleanup %d stale instance(s)\n", cleanupErrs)
 	}
 	return nil
 }

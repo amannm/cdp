@@ -1,7 +1,8 @@
-package internal
+package install
 
 import (
 	"archive/zip"
+	"cdp/internal/utility"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -44,7 +45,7 @@ func DetectPlatform() string {
 }
 
 func FetchVersionInfo() (*VersionInfo, error) {
-	Term.Info("fetching version info from %s\n", VersionURL)
+	utility.Term.Info("fetching version info from %s\n", VersionURL)
 	resp, err := http.Get(VersionURL)
 	if err != nil {
 		return nil, err
@@ -80,7 +81,7 @@ func GetDownloadURL(channelName, platform string) (string, string, error) {
 }
 
 func DownloadFile(url, dest string) error {
-	Term.Info("downloading %s to %s\n", url, dest)
+	utility.Term.Info("downloading %s to %s\n", url, dest)
 	resp, err := http.Get(url)
 	if err != nil {
 		return err
@@ -192,37 +193,37 @@ func BinaryPath(versionDir, platform string) string {
 func Install(channel, base string) (string, error) {
 	platform := DetectPlatform()
 	if platform == "" {
-		return "", ErrUser("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
+		return "", utility.ErrUser("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 	dlURL, version, err := GetDownloadURL(channel, platform)
 	if err != nil {
-		return "", ErrRuntime("getting download url: %v", err)
+		return "", utility.ErrRuntime("getting download url: %v", err)
 	}
 	if base == "" {
-		base = ChromeDir
+		base = utility.ChromeDir
 	}
 	versionDir, err := InstallChrome(base, version, dlURL)
 	if err != nil {
-		return "", ErrRuntime("installing: %v", err)
+		return "", utility.ErrRuntime("installing: %v", err)
 	}
 	current := filepath.Join(base, "current")
 	_ = os.Remove(current)
 	err = os.Symlink(version, current)
 	if err != nil {
-		return "", ErrRuntime("creating symlink: %v", err)
+		return "", utility.ErrRuntime("creating symlink: %v", err)
 	}
 	return BinaryPath(versionDir, platform), nil
 }
 
 func Uninstall(version, base string) error {
 	if base == "" {
-		base = ChromeDir
+		base = utility.ChromeDir
 	}
 	if version != "" {
 		target := filepath.Join(base, version)
 		err := os.RemoveAll(target)
 		if err != nil {
-			return ErrRuntime("removing %s: %v", version, err)
+			return utility.ErrRuntime("removing %s: %v", version, err)
 		}
 		current := filepath.Join(base, "current")
 		link, err := os.Readlink(current)
@@ -236,7 +237,7 @@ func Uninstall(version, base string) error {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return ErrRuntime("reading directory: %v", err)
+		return utility.ErrRuntime("reading directory: %v", err)
 	}
 	for _, e := range entries {
 		_ = os.RemoveAll(filepath.Join(base, e.Name()))
@@ -247,31 +248,31 @@ func Uninstall(version, base string) error {
 func Upgrade(channel, base string, clean bool) (string, error) {
 	platform := DetectPlatform()
 	if platform == "" {
-		return "", ErrUser("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
+		return "", utility.ErrUser("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 	if base == "" {
-		base = ChromeDir
+		base = utility.ChromeDir
 	}
 	current := filepath.Join(base, "current")
 	currentVer, err := os.Readlink(current)
 	if err != nil {
-		return "", ErrUser("no installation found (use 'chrome install' first)")
+		return "", utility.ErrUser("no installation found (use 'chrome install' first)")
 	}
 	dlURL, version, err := GetDownloadURL(channel, platform)
 	if err != nil {
-		return "", ErrRuntime("getting download url: %v", err)
+		return "", utility.ErrRuntime("getting download url: %v", err)
 	}
 	if version == currentVer {
 		return "", nil
 	}
 	versionDir, err := InstallChrome(base, version, dlURL)
 	if err != nil {
-		return "", ErrRuntime("installing: %v", err)
+		return "", utility.ErrRuntime("installing: %v", err)
 	}
 	_ = os.Remove(current)
 	err = os.Symlink(version, current)
 	if err != nil {
-		return "", ErrRuntime("updating symlink: %v", err)
+		return "", utility.ErrRuntime("updating symlink: %v", err)
 	}
 	if clean && currentVer != version {
 		_ = os.RemoveAll(filepath.Join(base, currentVer))

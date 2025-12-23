@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"cdp/internal/utility"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -24,7 +25,7 @@ type CDPError struct {
 	Message string `json:"message"`
 }
 
-type CDPConn struct {
+type Client struct {
 	Conn    *websocket.Conn
 	NextID  int64
 	Pending map[int64]chan *CDPMessage
@@ -33,13 +34,13 @@ type CDPConn struct {
 	Closed  bool
 }
 
-func DialCDP(wsURL string, withEvents bool) (*CDPConn, error) {
-	Term.Info("connecting to CDP: %s\n", wsURL)
+func NewClient(wsURL string, withEvents bool) (*Client, error) {
+	utility.Term.Info("connecting to CDP: %s\n", wsURL)
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	c := &CDPConn{
+	c := &Client{
 		Conn:    conn,
 		NextID:  1,
 		Pending: make(map[int64]chan *CDPMessage),
@@ -51,12 +52,12 @@ func DialCDP(wsURL string, withEvents bool) (*CDPConn, error) {
 	return c, nil
 }
 
-func (c *CDPConn) readLoop() {
+func (c *Client) readLoop() {
 	for {
 		_, data, err := c.Conn.ReadMessage()
 		if err != nil {
 			if !c.Closed {
-				Term.Info("ws read error: %v\n", err)
+				utility.Term.Info("ws read error: %v\n", err)
 			}
 			c.Mu.Lock()
 			c.Closed = true
@@ -70,11 +71,11 @@ func (c *CDPConn) readLoop() {
 			c.Mu.Unlock()
 			return
 		}
-		Term.Info("<- %s\n", string(data))
+		utility.Term.Info("<- %s\n", string(data))
 		var msg CDPMessage
 		err = json.Unmarshal(data, &msg)
 		if err != nil {
-			Term.Info("json decode error: %v\n", err)
+			utility.Term.Info("json decode error: %v\n", err)
 			continue
 		}
 		if msg.ID != 0 {
@@ -91,7 +92,7 @@ func (c *CDPConn) readLoop() {
 				select {
 				case c.Events <- &msg:
 				default:
-					Term.Info("event buffer full, dropping: %s\n", msg.Method)
+					utility.Term.Info("event buffer full, dropping: %s\n", msg.Method)
 				}
 			}
 			c.Mu.Unlock()
@@ -99,7 +100,7 @@ func (c *CDPConn) readLoop() {
 	}
 }
 
-func (c *CDPConn) Send(ctx context.Context, method string, params json.RawMessage, sessionID string) (*CDPMessage, error) {
+func (c *Client) Send(ctx context.Context, method string, params json.RawMessage, sessionID string) (*CDPMessage, error) {
 	id := atomic.AddInt64(&c.NextID, 1)
 	msg := CDPMessage{ID: id, Method: method, Params: params}
 	if sessionID != "" {
@@ -109,7 +110,7 @@ func (c *CDPConn) Send(ctx context.Context, method string, params json.RawMessag
 	if err != nil {
 		return nil, err
 	}
-	Term.Info("-> %s\n", string(data))
+	utility.Term.Info("-> %s\n", string(data))
 	ch := make(chan *CDPMessage, 1)
 	c.Mu.Lock()
 	if c.Pending == nil {
@@ -139,11 +140,11 @@ func (c *CDPConn) Send(ctx context.Context, method string, params json.RawMessag
 	}
 }
 
-func (c *CDPConn) Close() {
+func (c *Client) Close() {
 	_ = c.Conn.Close()
 }
 
-func (c *CDPConn) AttachToTarget(ctx context.Context, targetID string) (string, error) {
+func (c *Client) AttachToTarget(ctx context.Context, targetID string) (string, error) {
 	attachParams, _ := json.Marshal(map[string]any{"targetId": targetID, "flatten": true})
 	attachResp, err := c.Send(ctx, "Target.attachToTarget", attachParams, "")
 	if err != nil {
@@ -163,45 +164,45 @@ func (c *CDPConn) AttachToTarget(ctx context.Context, targetID string) (string, 
 }
 
 func Send(ctx context.Context, wsURL, target, method string, params json.RawMessage) (*CDPMessage, error) {
-	conn, err := DialCDP(wsURL, false)
+	conn, err := NewClient(wsURL, false)
 	if err != nil {
-		return nil, ErrRuntime("connecting: %v", err)
+		return nil, utility.ErrRuntime("connecting: %v", err)
 	}
 	defer conn.Close()
 	var sessionID string
 	if target != "" && target != "browser" {
 		sessionID, err = conn.AttachToTarget(ctx, target)
 		if err != nil {
-			return nil, ErrRuntime("attaching to target: %v", err)
+			return nil, utility.ErrRuntime("attaching to target: %v", err)
 		}
 	}
 	resp, err := conn.Send(ctx, method, params, sessionID)
 	if err != nil {
-		return nil, ErrRuntime("sending command: %v", err)
+		return nil, utility.ErrRuntime("sending command: %v", err)
 	}
 	return resp, nil
 }
 
 func Listen(ctx context.Context, wsURL, target, domain string, eventCh chan<- *CDPMessage) error {
-	conn, err := DialCDP(wsURL, true)
+	conn, err := NewClient(wsURL, true)
 	if err != nil {
-		return ErrRuntime("connecting: %v", err)
+		return utility.ErrRuntime("connecting: %v", err)
 	}
 	defer conn.Close()
 	var sessionID string
 	if target != "" {
 		sessionID, err = conn.AttachToTarget(ctx, target)
 		if err != nil {
-			return ErrRuntime("attaching to target: %v", err)
+			return utility.ErrRuntime("attaching to target: %v", err)
 		}
 	}
 	enableMethod := domain + ".enable"
 	enableResp, err := conn.Send(ctx, enableMethod, nil, sessionID)
 	if err != nil {
-		return ErrRuntime("enabling %s: %v", domain, err)
+		return utility.ErrRuntime("enabling %s: %v", domain, err)
 	}
 	if enableResp.Error != nil {
-		return ErrUser("enable error: %s", enableResp.Error.Message)
+		return utility.ErrUser("enable error: %s", enableResp.Error.Message)
 	}
 	for {
 		select {

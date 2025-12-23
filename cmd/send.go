@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"cdp/internal"
+	"cdp/internal/utility"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -58,13 +59,13 @@ func runSend(_ *cobra.Command, args []string) error {
 		var err error
 		params, err = readParamsFromStdin()
 		if err != nil {
-			return internal.ErrUser("reading stdin: %v", err)
+			return utility.ErrUser("reading stdin: %v", err)
 		}
 	}
 	var paramsJSON json.RawMessage
 	if params != "" {
 		if !json.Valid([]byte(params)) {
-			return internal.ErrUser("invalid JSON params")
+			return utility.ErrUser("invalid JSON params")
 		}
 		paramsJSON = json.RawMessage(params)
 	}

@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"cdp/internal"
+	"cdp/internal/install"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -53,7 +53,7 @@ func init() {
 }
 
 func runInstall(_ *cobra.Command, _ []string) error {
-	bin, err := internal.Install(installChannel, installPath)
+	bin, err := install.Install(installChannel, installPath)
 	if err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func runInstall(_ *cobra.Command, _ []string) error {
 }
 
 func runUninstall(_ *cobra.Command, _ []string) error {
-	err := internal.Uninstall(uninstallVer, uninstallPath)
+	err := install.Uninstall(uninstallVer, uninstallPath)
 	if err != nil {
 		return err
 	}
@@ -75,7 +75,7 @@ func runUninstall(_ *cobra.Command, _ []string) error {
 }
 
 func runUpgrade(_ *cobra.Command, _ []string) error {
-	bin, err := internal.Upgrade(upgradeChannel, upgradePath, upgradeClean)
+	bin, err := install.Upgrade(upgradeChannel, upgradePath, upgradeClean)
 	if err != nil {
 		return err
 	}

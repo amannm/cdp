@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"cdp/internal"
+	"cdp/internal/utility"
 	"fmt"
 	"os"
 
@@ -16,7 +16,8 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.PersistentFlags().BoolVarP(&internal.Verbose, "verbose", "v", false, "Enable debug output")
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
+	rootCmd.PersistentFlags().BoolVarP(&utility.Verbose, "verbose", "v", false, "Enable debug output")
 }
 
 func Execute() {
@@ -24,9 +25,9 @@ func Execute() {
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "error:", err)
 		switch {
-		case internal.IsUserError(err):
+		case utility.IsUserError(err):
 			os.Exit(1)
-		case internal.IsRuntimeError(err):
+		case utility.IsRuntimeError(err):
 			os.Exit(2)
 		default:
 			os.Exit(1)
