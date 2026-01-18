@@ -25,10 +25,12 @@ var (
 	sendTarget  string
 	sendParams  string
 	sendTimeout time.Duration
+	sendWsURL   string
 )
 
 func init() {
 	sendCmd.Flags().StringVarP(&sendName, "name", "n", "", "Browser instance name (default: first available)")
+	sendCmd.Flags().StringVarP(&sendWsURL, "ws-url", "w", "", "Remote debugger URL (ws://..., http(s)://..., or host:port)")
 	sendCmd.Flags().StringVarP(&sendTarget, "target", "t", "", "Target ID or 'browser' for browser-level commands")
 	sendCmd.Flags().StringVarP(&sendParams, "params", "p", "", "JSON params (or pipe via stdin)")
 	sendCmd.Flags().DurationVar(&sendTimeout, "timeout", 30*time.Second, "Response timeout")
@@ -50,9 +52,22 @@ func readParamsFromStdin() (string, error) {
 
 func runSend(_ *cobra.Command, args []string) error {
 	method := args[0]
-	inst, err := internal.ResolveInstance(sendName)
-	if err != nil {
-		return err
+	if sendWsURL != "" && sendName != "" {
+		return utility.ErrUser("--ws-url and --name are mutually exclusive")
+	}
+	wsURL := sendWsURL
+	if wsURL != "" {
+		var err error
+		wsURL, err = internal.ResolveWsURL(wsURL)
+		if err != nil {
+			return err
+		}
+	} else {
+		inst, err := internal.ResolveInstance(sendName)
+		if err != nil {
+			return err
+		}
+		wsURL = inst.WsURL
 	}
 	params := sendParams
 	if params == "" {
@@ -71,7 +86,7 @@ func runSend(_ *cobra.Command, args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
 	defer cancel()
-	resp, err := internal.Send(ctx, inst.WsURL, sendTarget, method, paramsJSON)
+	resp, err := internal.Send(ctx, wsURL, sendTarget, method, paramsJSON)
 	if err != nil {
 		return err
 	}

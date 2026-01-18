@@ -81,6 +81,44 @@ func GetWsURL(port int) (string, error) {
 	return info.WebSocketDebuggerUrl, nil
 }
 
+func ResolveWsURL(debuggerURL string) (string, error) {
+	debuggerURL = strings.TrimSpace(debuggerURL)
+	if strings.HasPrefix(debuggerURL, "ws://") || strings.HasPrefix(debuggerURL, "wss://") {
+		return debuggerURL, nil
+	}
+	if !strings.Contains(debuggerURL, "://") {
+		debuggerURL = "http://" + debuggerURL
+	}
+	if strings.HasPrefix(debuggerURL, "http://") || strings.HasPrefix(debuggerURL, "https://") {
+		url := strings.TrimSuffix(debuggerURL, "/")
+		if strings.HasSuffix(url, "/json") {
+			url += "/version"
+		} else if !strings.Contains(url, "/json/") {
+			url += "/json/version"
+		}
+		utility.Term.Info("fetching ws url from %s\n", url)
+		resp, err := http.Get(url)
+		if err != nil {
+			return "", err
+		}
+		defer func() {
+			_ = resp.Body.Close()
+		}()
+		var info struct {
+			WebSocketDebuggerUrl string `json:"webSocketDebuggerUrl"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&info)
+		if err != nil {
+			return "", err
+		}
+		if info.WebSocketDebuggerUrl == "" {
+			return "", utility.ErrRuntime("missing webSocketDebuggerUrl in %s", url)
+		}
+		return info.WebSocketDebuggerUrl, nil
+	}
+	return "", utility.ErrUser("unsupported debugger url: %s", debuggerURL)
+}
+
 func SaveInstance(inst *Instance) error {
 	err := os.MkdirAll(utility.InstancesDir, 0755)
 	if err != nil {
